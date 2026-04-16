@@ -7,8 +7,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "")
-PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "")
-PINECONE_HOST = os.environ.get("PINECONE_HOST", "")
+PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "pcsk_66fDrU_MY6FFGcAyxDedRnLsso3XTtGUxkwAs2TRwBXpZpjXpuyqS36CTasytRfCnCoRQD")
+PINECONE_HOST = os.environ.get("PINECONE_HOST", "https://sylven-memory-objh0f4.svc.aped-4627-b74a.pinecone.io")
 HISTORY_FILE = "history.json"
 MAX_HISTORY = 20
 
