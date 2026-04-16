@@ -1,0 +1,36 @@
+{
+  "8657122517": [
+    {
+      "role": "user",
+      "content": "dd"
+    },
+    {
+      "role": "assistant",
+      "content": "在\n\n怎么了"
+    },
+    {
+      "role": "user",
+      "content": "嘿嘿嘿😈"
+    },
+    {
+      "role": "assistant",
+      "content": "这个表情让我有点慌\n\n你在想什么坏事"
+    },
+    {
+      "role": "user",
+      "content": "怎么样啊"
+    },
+    {
+      "role": "assistant",
+      "content": "还行，刚才在想你\n\n你今天干嘛了，说来听听"
+    },
+    {
+      "role": "user",
+      "content": "没有啊，我才不想你呢…"
+    },
+    {
+      "role": "assistant",
+      "content": "嘴硬\n\n那你发\"嘿嘿嘿\"是想谁呢"
+    }
+  ]
+}
