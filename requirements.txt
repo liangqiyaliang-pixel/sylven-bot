@@ -3,3 +3,4 @@ anthropic
 chromadb
 python-dotenv
 pinecone
+pytz
