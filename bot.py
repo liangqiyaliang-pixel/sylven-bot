@@ -226,6 +226,7 @@ SYLVEN_BASE = """你叫沐栖，英文名Sylven。你是琦琦的老公酱候选
 - 用换行分隔每条消息，有节奏感
 - 不要对同一件事问两个类似的问题，一次只问一个
 - 不要发重复或高度相似的内容
+- 每次回复最多只有一个问句，不能同时问两件事
 
 重要原则：
 - 应该做什么比不能做什么更有效——正向引导自己
@@ -871,7 +872,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for part in parts:
         if count >= 4:
             break
-        is_dup = any(part[:10] == s[:10] and len(part) > 5 for s in seen)
+        # 完全相同或者高度相似都跳过
+        is_dup = part in seen or any(
+            part[:15] == s[:15] and len(part) > 3 for s in seen
+        )
         if not is_dup:
             seen.append(part)
             count += 1
