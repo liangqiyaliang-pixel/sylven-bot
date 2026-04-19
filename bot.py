@@ -1130,7 +1130,11 @@ def main():
     if last_msg_saved:
         last_message_time[QIQI_USER_ID] = float(last_msg_saved)
 
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    async def post_init(application):
+        asyncio.create_task(proactive_check(application))
+        asyncio.create_task(keepalive_check(application))
+
+    app = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("model", cmd_model))
@@ -1146,12 +1150,6 @@ def main():
     app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
     app.add_handler(MessageHandler(filters.ANIMATION, handle_gif))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    async def post_init(application):
-        asyncio.create_task(proactive_check(application))
-        asyncio.create_task(keepalive_check(application))
-
-    app.post_init = post_init
 
     print("沐栖启动了，等琦琦...")
     app.run_polling()
