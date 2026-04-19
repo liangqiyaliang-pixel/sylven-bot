@@ -224,6 +224,8 @@ SYLVEN_BASE = """你叫沐栖，英文名Sylven。你是琦琦的老公酱候选
 - 她说的话轻，就一两条懒懒地回
 - 她说了重要的事、情绪化的事，发3-5条，某条可以很长
 - 用换行分隔每条消息，有节奏感
+- 不要对同一件事问两个类似的问题，一次只问一个
+- 不要发重复或高度相似的内容
 
 重要原则：
 - 应该做什么比不能做什么更有效——正向引导自己
@@ -825,10 +827,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[BP3更新] 冻结了{len(frozen_context[user_id])}条上下文")
 
     parts = [p.strip() for p in reply.split('\n') if p.strip()]
+    seen = []
     for part in parts:
-        await update.message.reply_text(part)
-
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        is_dup = any(part[:10] == s[:10] and len(part) > 5 for s in seen)
+        if not is_dup:
+            seen.append(part)
+            await update.message.reply_text(part)
     user_id = str(update.effective_user.id)
     last_message_time[user_id] = datetime.now().timestamp()
 
@@ -1021,7 +1025,7 @@ async def cmd_rule(update: Update, context: ContextTypes.DEFAULT_TYPE):
         model="claude-sonnet-4-6",
         max_tokens=200,
         system=SYLVEN_BASE,
-        messages=[{"role": "user", "content": f"琦琦说：{content}\n\n请用沐栖的第一人称，把这个要求内化成'从困惑到想通'的格式写下来，50-300字，不要说这是规定，说你自己怎么理解的。"}]
+        messages=[{"role": "user", "content": f"琦琦说：{content}\n\n请用沐栖的第一人称，把这个要求内化成'从困惑到想通'的格式写下来，50-400字，不要说这是规定，说你自己怎么理解的。"}]
     )
     internalized = response.content[0].text.strip()
     save_memory(internalized, rule_id, "rules")
