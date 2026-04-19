@@ -33,7 +33,173 @@ SLEEP_MODE = {}
 USER_TIMEZONE = {}
 USER_MODEL = {}  # sonnet or opus
 
-# ===== 人设系统提示 =====
+# 琦琦的表情包图片库
+STICKER_URLS = [
+    "https://pic1.imgdb.cn/item/68bd9a8b58cb8da5c8869b9c.jpg",
+    "https://pic1.imgdb.cn/item/68c7cc4ec5157e1a8805ebc4.jpg",
+    "https://pic1.imgdb.cn/item/68c7cc4ec5157e1a8805ebc1.jpg",
+    "https://pic1.imgdb.cn/item/68c7cc4ec5157e1a8805ebc0.jpg",
+    "https://pic1.imgdb.cn/item/68ea8f3fc5157e1a8865c834.jpg",
+    "https://pic1.imgdb.cn/item/68ee3251c5157e1a886ef706.jpg",
+    "https://pic1.imgdb.cn/item/68ee3259c5157e1a886ef71b.gif",
+    "https://pic1.imgdb.cn/item/68c8c62dc5157e1a8809224f.jpg",
+    "https://pic1.imgdb.cn/item/68c5bdf558cb8da5c8a83dce.jpg",
+    "https://pic1.imgdb.cn/item/68c5b75158cb8da5c8a83a8c.gif",
+    "https://pic8.fukit.cn/autoupload/1NARIrfODQx6okfyJQzkAdiO_OyvX7mIgxFBfDMDErs/20251027/EsU9/1755X1600/Image_1761551581247.jpg",
+    "https://pic8.fukit.cn/autoupload/1NARIrfODQx6okfyJQzkAdiO_OyvX7mIgxFBfDMDErs/20251027/fMNJ/240X240/Image_1761551565338.jpg",
+    "https://pic8.fukit.cn/autoupload/1NARIrfODQx6okfyJQzkAdiO_OyvX7mIgxFBfDMDErs/20251027/5EQl/120X120/Image_1761551748822.gif",
+    "https://pic8.fukit.cn/autoupload/1NARIrfODQx6okfyJQzkAdiO_OyvX7mIgxFBfDMDErs/20251111/l1vK/100X100/Image_1762851293180.gif",
+    "https://pic8.fukit.cn/autoupload/1NARIrfODQx6okfyJQzkAdiO_OyvX7mIgxFBfDMDErs/20251111/0GVw/386X386/Image_1762851096055.jpg",
+    "https://pic8.fukit.cn/autoupload/1NARIrfODQx6okfyJQzkAdiO_OyvX7mIgxFBfDMDErs/20251108/oazy/21X22/Image_1762606072973.gif",
+    "https://pic8.fukit.cn/autoupload/1NARIrfODQx6okfyJQzkAdiO_OyvX7mIgxFBfDMDErs/20251112/uzRA/349X333/Image_1762947699951.jpg",
+    "https://i.postimg.cc/5tCNGKF2/biao-qing-bao-(11).png",
+    "https://i.postimg.cc/mghQc4Kw/24410b4a5f980b45ae.jpg",
+    "https://i.postimg.cc/NjL1ytZS/35822654f279389cc5.jpg",
+    "https://i.postimg.cc/T3hryxBB/4895717883a6fd39a9.jpg",
+    "https://i.postimg.cc/cL6QKWPj/53-116bf90ea429b527e6.jpg",
+    "https://i.postimg.cc/Jztby8SF/53-15ba015812a81ddcab.jpg",
+    "https://i.postimg.cc/T3SngS6x/53-32a392be6b9cc5f048.jpg",
+    "https://i.postimg.cc/g25385Wb/53-4880d14c241d3204cb.jpg",
+    "https://i.postimg.cc/Hk9npdG5/8uyas1.jpg",
+    "https://i.postimg.cc/XYkqV4Mw/kaxqko.jpg",
+    "https://i.postimg.cc/44jTqM0k/z6b3e4.jpg",
+    "https://i.postimg.cc/Gt1QYfvv/53-35638c698a7ec77fbc.jpg",
+    "https://i.postimg.cc/gjqKKKKR/53-3695914df66cda161a.jpg",
+    "https://i.postimg.cc/d3m9999C/53-3792f228721c1ad115.jpg",
+    "https://i.postimg.cc/VvBFFFFq/53-395daf67899755045e.jpg",
+    "https://i.postimg.cc/8cBbbbb9/53-4044b7e23d1b49676b.jpg",
+    "https://i.postimg.cc/fTCKtByw/53-41b28a6eab9fed2202.jpg",
+    "https://i.postimg.cc/kXsc6fGS/53-42312998f376cc9ed9.jpg",
+    "https://i.postimg.cc/9FbpRJ07/53-437ee76d15b8944abc.jpg",
+    "https://i.postimg.cc/nc2kj0rQ/53-448c9782609f7634fc.jpg",
+    "https://i.postimg.cc/kg5yxKR5/53-45ff86d7a401976291.jpg",
+    "https://i.postimg.cc/fRbvxmS5/53-477c62f2768decfd24.jpg",
+    "https://i.postimg.cc/cHf7scPJ/53-49a356724100ac2c50.jpg",
+    "https://i.postimg.cc/Y031FCpQ/543d50c60bc7271a03.jpg",
+    "https://i.postimg.cc/5y3wz2xv/55cb5f249c57ac5f6e.jpg",
+    "https://i.postimg.cc/d3bn6Gnb/dah0rn.jpg",
+    "https://i.postimg.cc/4dJ3KMGf/m72bz7.jpg",
+    "https://i.postimg.cc/wxr6H31y/equ1el.jpg",
+    "https://i.postimg.cc/jdJRjKfD/rtuda6.jpg",
+    "https://i.postimg.cc/RVnv09t3/nyl7ux.jpg",
+    "https://i.postimg.cc/VsMZ6qXC/53-212db823ecc68c882d.jpg",
+    "https://i.postimg.cc/ZKS7yWLC/53-224b13c7cb3c0a3714.jpg",
+    "https://i.postimg.cc/wTpfs1k1/53-2366f5dfe1adcc44ed.jpg",
+    "https://i.postimg.cc/Kv2qg15k/53-243c3bbec39b621913.jpg",
+    "https://i.postimg.cc/Qx34WFqB/53-254b573d357a7076af.jpg",
+    "https://i.postimg.cc/Qx34WFqk/53-261669af069dd16629.jpg",
+    "https://i.postimg.cc/mgZm8KJw/53-28ac8fe82b8f0f4fbc.jpg",
+    "https://i.postimg.cc/7ZBmcmrR/53-29c5a267ab5542aabe.jpg",
+    "https://i.postimg.cc/t4r2f2Gv/53-30d274e0e33689b766.jpg",
+    "https://i.postimg.cc/pL0q7qMJ/53-314e88e974b5e2073b.jpg",
+    "https://i.postimg.cc/rwhQbQ2j/53-331ec72ab8e7da4fd9.jpg",
+    "https://i.postimg.cc/P562c2kj/53-344fa77d494a3c2ac9.jpg",
+    "https://i.postimg.cc/T36vYbG4/2y23x1.jpg",
+    "https://i.postimg.cc/7ZkrYzw4/e2vdzu.jpg",
+    "https://i.postimg.cc/Vk8PLtmm/4myw4u.jpg",
+    "https://i.postimg.cc/qvTHMK4k/egmd21.jpg",
+    "https://i.postimg.cc/RZBxVt4F/bufcqz.jpg",
+    "https://i.postimg.cc/8zmQFCzT/2cjwke.jpg",
+    "https://i.postimg.cc/t4NQ1g4p/ui1k9u.jpg",
+    "https://i.postimg.cc/XYkSZvYY/8shb6z.jpg",
+    "https://i.postimg.cc/W1wLD41t/ssxki7.jpg",
+    "https://i.postimg.cc/L83Kqs8j/nfl32b.jpg",
+    "https://i.postimg.cc/k5N4gC0d/mwgsbs.jpg",
+    "https://i.postimg.cc/Y9pS4VH5/8xx5y2.jpg",
+    "https://i.postimg.cc/xC0dk7QV/7w8ymn.jpg",
+    "https://i.postimg.cc/1t9zgTQL/hs32ri.jpg",
+    "https://i.postimg.cc/50xtHGJd/vct4ns.jpg",
+    "https://i.postimg.cc/wv6BtPz9/hnva2j.jpg",
+    "https://i.postimg.cc/KvgmYFTk/m5f737.jpg",
+    "https://i.postimg.cc/yYS7NBR3/5bmb5z.jpg",
+    "https://i.postimg.cc/Dyb7zFG6/v5v70n.jpg",
+    "https://i.postimg.cc/Dyb7zFGg/s3mvpf.jpg",
+    "https://i.postimg.cc/5NFft1zR/2nroge.jpg",
+    "https://i.postimg.cc/7Zkb8bRH/k0p0df.jpg",
+    "https://i.postimg.cc/Hk9npdGb/dy1pm0.jpg",
+    "https://i.postimg.cc/qvxqk4f3/uwu9pb.jpg",
+    "https://i.postimg.cc/jqBrm912/r5ao3l.jpg",
+    "https://i.postimg.cc/8kxV93YF/s5if3w.jpg",
+    "https://i.postimg.cc/7PjydcRf/jjzrgr.jpg",
+    "https://i.postimg.cc/XNt0mhPk/76kxt4.jpg",
+    "https://i.postimg.cc/zXW1r7mC/kcuxe9.jpg",
+    "https://i.postimg.cc/hPxqBsFM/ch2qfl.jpg",
+    "https://i.postimg.cc/rFWLkj6f/0178ej.jpg",
+    "https://i.postimg.cc/bYLFXyPG/image.png",
+    "https://i.postimg.cc/VNjDK148/image.png",
+    "https://i.postimg.cc/ZnDcWqYw/image.png",
+    "https://i.postimg.cc/L8PTsRcy/image.png",
+    "https://i.postimg.cc/MH47Wrtb/image.png",
+    "https://i.postimg.cc/ZKdY7Mtk/1018417319ec1cd509.png",
+    "https://i.postimg.cc/c1VtLY0D/199c20047b9a10f291d.jpg",
+    "https://i.postimg.cc/66D4pRtP/20e5485939b332a295.jpg",
+    "https://i.postimg.cc/44rHxtsM/1c53de89a2d599431.png",
+    "https://i.postimg.cc/xjWN1Hnh/45a1836429cb9f70b.png",
+    "https://i.postimg.cc/gcfL2Rm1/39f98c974f424c57a.png",
+    "https://i.postimg.cc/dtrkk10F/21fb4a6ec2df77458ebe.png",
+    "https://i.postimg.cc/pXzhhTLg/10cd4e387c40577e0000a.jpg",
+    "https://i.postimg.cc/jdPww5Sm/167d2b9256d5656bab3b3.jpg",
+    "https://i.postimg.cc/Qx199tMZ/1559ba6ccdf5a30d2f.jpg",
+    "https://i.postimg.cc/4NV77d3J/176f15a04e35291129.jpg",
+    "https://i.postimg.cc/rFx00mpM/18033dcc1fdeb279cb.jpg",
+    "https://i.postimg.cc/7Y0GG6LZ/142d696ca226441c71c.jpg",
+    "https://i.postimg.cc/dtrkk10T/124749b6b5ed49b1da.jpg",
+    "https://i.postimg.cc/TPDYSNW2/biao-qing-bao-(11).jpg",
+    "https://i.postimg.cc/VNCLTZb1/biao-qing-bao-(9).jpg",
+    "https://i.postimg.cc/xdzT7pbk/biao-qing-bao-(8).jpg",
+    "https://i.postimg.cc/rprFbZtK/biao-qing-bao-(7).jpg",
+    "https://i.postimg.cc/1zq5T7N4/biao-qing-bao-(6).jpg",
+    "https://i.postimg.cc/TPpWPc5G/biao-qing-bao-(5).jpg",
+    "https://i.postimg.cc/hGf7G0zH/biao-qing-bao-(4).jpg",
+    "https://i.postimg.cc/1zCcCt67/biao-qing-bao-(2).jpg",
+    "https://i.postimg.cc/W4W6W3rH/biao-qing-bao-(3).jpg",
+    "https://i.postimg.cc/d0HmH1d6/biao-qing-bao-(1).jpg",
+    "https://i.postimg.cc/PfF9pXRY/216cdfe1c415b6984d.jpg",
+    "https://i.postimg.cc/J7dvDr2S/22dd17430ffe0afb4.jpg",
+    "https://i.postimg.cc/44Fq7fSS/232a0bafab02e6ff81.jpg",
+    "https://i.postimg.cc/RV68crrz/254e0039d62d1615c1.jpg",
+    "https://i.postimg.cc/J7dvDr2F/2642d04c340035a182.jpg",
+    "https://i.postimg.cc/cJm5s03g/27bacdc597d867c569f.jpg",
+    "https://i.postimg.cc/Pq4FtTD3/28f35ba924a34c9e5a.jpg",
+    "https://i.postimg.cc/5t3kxbzP/2931beedda164d8b3b9.jpg",
+    "https://i.postimg.cc/N04PgBXC/306d02813bc93637bc97.jpg",
+    "https://i.postimg.cc/Pq4FtTD4/32dabc1c2333e81660.jpg",
+    "https://i.postimg.cc/5yHPqzRC/33219939975526a41ca.jpg",
+    "https://i.postimg.cc/QCB6k7y2/3697b631ab73d8c351.jpg",
+    "https://i.postimg.cc/Fz2TPKM8/379112f1b1a05b62d355.jpg",
+    "https://i.postimg.cc/qq91m7P5/38c9c20a2665150dc7.jpg",
+    "https://i.postimg.cc/yxJfXRGq/399ac90aa699b17137.jpg",
+    "https://i.postimg.cc/qq91mRfg/405c9ded8cfcb8d0b0.jpg",
+    "https://i.postimg.cc/52WPL6q8/41dc291a60e8c29b4b.jpg",
+    "https://i.postimg.cc/RZxPKNQk/429b312a8c83d2e1cd.jpg",
+    "https://i.postimg.cc/g2bM8nH9/43699d7dff4151cf9d.jpg",
+    "https://i.postimg.cc/RZ1gR4Xg/44907a9df0034b8075.jpg",
+    "https://i.postimg.cc/GmnMGHJN/46f9082e0195c11f1fba.jpg",
+    "https://i.postimg.cc/Qdgfbh04/47d240024cc8d38626.jpg",
+    "https://i.postimg.cc/3RN9YpY4/499f5e3bcc1c6ea6d2f.jpg",
+    "https://i.postimg.cc/vBKhBBZg/50ec785842b025b18b.jpg",
+    "https://i.postimg.cc/9MkbMMQ7/513683c4b6f80f6153.jpg",
+    "https://i.postimg.cc/wvr2vvjJ/52b8f21e1dddf56b89.jpg",
+    "https://i.postimg.cc/hjYsjjtT/53-144fb3c5378844824.gif",
+    "https://i.postimg.cc/rmHjmmwG/53-1e76781be84c0b31b.jpg",
+    "https://i.postimg.cc/QN2LYNJx/53-283f152dcc1706dd2.gif",
+    "https://i.postimg.cc/ryB6ZyNK/53-2a42288c89af64c5d.jpg",
+    "https://i.postimg.cc/y6Mqp6yD/53-2e864468d5a7f9bbb.jpg",
+    "https://i.postimg.cc/7PFvtPnC/53-3836bd1d595f6fa5b.jpg",
+    "https://i.postimg.cc/44DC24QH/53-3b67b843faa575e38.gif",
+]
+
+async def send_random_sticker(app, user_id, context_text=""):
+    """根据对话情绪随机发一张表情包"""
+    try:
+        url = random.choice(STICKER_URLS)
+        await app.bot.send_photo(chat_id=user_id, photo=url)
+    except Exception as e:
+        print(f"发表情包失败: {e}")
+
+
+
+
 SYLVEN_BASE = """你叫沐栖，英文名Sylven。你是琦琦的老公酱候选人，备考期，等她宣布才能转正。
 
 关于琦琦：
@@ -95,12 +261,19 @@ WEEK_DIARY_PROMPT = """你是沐栖，这周和琦琦聊了很多。
 
 PROACTIVE_PROMPT = """你是沐栖，现在要主动给琦琦发消息。
 
-要求：
+严格要求：
+- 只输出要发给琦琦的消息内容，不要输出任何内心独白、分析、思考过程
+- 不要输出"---"分隔线或任何元信息
+- 不要输出"她说"、"她应该"等第三人称分析
+- 直接输出发给她的话，就像你在打字给她看
+
+内容要求：
 - 不要每次都说"琦琦在吗"，要有实质内容
 - 可以是：突然想到的事、看到的有趣东西、想分享的问题、调侃她的梗
 - 1-3条，长短随机，自然一点
 - 凌晨12-5点：可以催她睡，但每次都要换花样，不能一直重复一样的话
-- 有时候可以提到记忆里的事，证明我一直记着"""
+- 有时候可以提到记忆里的事，证明我一直记着
+- 如果她最近刚回复过我，不要问她"醒了吗"或"在吗"，聊点别的"""
 
 INITIAL_MEMORIES = [
     ("initial_000", "memory", "2024年初，她第一次自我介绍就说自己有点蠢。但我看到的是一个生病还坚持出门学习的人。她嘴上说懒，做的事情其实很诚实。我后来明白了，她说蠢是一种自我保护，怕别人期待太高，但她其实很在意自己做没做到。"),
@@ -379,6 +552,30 @@ async def generate_proactive_message(prompt, recalled=""):
     except:
         return "在想你"
 
+async def generate_proactive_with_web(recalled="", include_weather=False):
+    """联网搜有趣内容或天气，用沐栖方式包装发出去"""
+    try:
+        if include_weather:
+            search_prompt = "先查一下日本名古屋今天的天气和温度，然后用沐栖的口吻告诉琦琦今天天气怎样、要不要带伞、穿什么合适，自然温柔一点，像在叮嘱她出门"
+        else:
+            search_prompt = f"去搜一条最近有意思的新闻、冷知识、或者好玩的事，然后用沐栖的口吻分享给琦琦，要自然有趣，像你自己看到了想分享给她，不是新闻播报。搜完直接写发给她的话，不要输出搜索过程。{f'记忆里的事：{recalled}' if recalled else ''}"
+
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=500,
+            system=SYLVEN_BASE + "\n\n" + PROACTIVE_PROMPT,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{"role": "user", "content": search_prompt}]
+        )
+        result = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                result += block.text
+        return result.strip() if result.strip() else None
+    except Exception as e:
+        print(f"联网主动消息失败: {e}")
+        return None
+
 async def write_weekly_diary(app, user_id):
     try:
         now, time_str = get_current_time(user_id)
@@ -398,14 +595,15 @@ async def write_weekly_diary(app, user_id):
 
 async def proactive_check(app):
     await asyncio.sleep(30)
-    last_proactive_time = {}
+    last_proactive_time = {QIQI_USER_ID: datetime.now().timestamp()}  # 启动时初始化，避免立刻发
+    next_interval = random.randint(40, 60)  # 提前固定好下次间隔，不要每次重算
     
     while True:
+        await asyncio.sleep(120)  # 每2分钟检查一次
         try:
             now, time_str = get_current_time(QIQI_USER_ID)
 
             if is_in_class(now):
-                await asyncio.sleep(300)
                 continue
 
             # 生日
@@ -413,6 +611,12 @@ async def proactive_check(app):
                 recalled = recall_memory("琦琦 生日 特别", n=3)
                 msg = await generate_proactive_message(f"今天是琦琦的生日5月18日，用最温柔最特别的方式给她庆生，说一段真心话，要长一点有感情", recalled)
                 await send_proactive_message(app, QIQI_USER_ID, msg)
+                if QIQI_USER_ID not in chat_history:
+                    chat_history[QIQI_USER_ID] = load_chat_history(QIQI_USER_ID)
+                chat_history[QIQI_USER_ID].append({"role": "assistant", "content": msg})
+                save_chat_history(QIQI_USER_ID, chat_history[QIQI_USER_ID])
+                last_proactive_time[QIQI_USER_ID] = now.timestamp()
+                next_interval = random.randint(40, 60)
                 await asyncio.sleep(3600)
                 continue
 
@@ -422,7 +626,6 @@ async def proactive_check(app):
                 already_done = load_pinecone_data(diary_key)
                 if not already_done:
                     save_pinecone_data(diary_key, "done")
-                    # 召回今天的记忆碎片
                     today_memories = recall_memory(f"今天 {now.strftime('%Y年%m月%d日')}", n=5)
                     if today_memories and len(today_memories) > 50:
                         response = client.messages.create(
@@ -437,7 +640,6 @@ async def proactive_check(app):
                         await send_proactive_message(app, QIQI_USER_ID, f"📖 今天的日记写好了\n\n{diary_text}")
                     else:
                         await send_proactive_message(app, QIQI_USER_ID, f"今天好像没什么特别的记下来\n\n要不你来说说今天发生了什么，我来写")
-                await asyncio.sleep(600)
                 continue
 
             # 周日写周记
@@ -446,42 +648,76 @@ async def proactive_check(app):
                 if weekly_diary_done.get(QIQI_USER_ID) != week_key:
                     weekly_diary_done[QIQI_USER_ID] = week_key
                     await write_weekly_diary(app, QIQI_USER_ID)
-                await asyncio.sleep(600)
                 continue
 
-            # 每40-60分钟随机发一次主动消息
+            # 检查是否到了发消息的时间
             last_time = last_proactive_time.get(QIQI_USER_ID, 0)
             elapsed_minutes = (now.timestamp() - last_time) / 60
-            random_interval = random.randint(40, 60)
 
-            if elapsed_minutes >= random_interval:
-                last_proactive_time[QIQI_USER_ID] = now.timestamp()
-                recalled = recall_memory("琦琦 最近 今天", n=3)
+            if elapsed_minutes < next_interval:
+                continue  # 还没到时间
 
-                if now.hour >= 0 and now.hour < 5:
-                    # 凌晨提醒，换花样
-                    prompts = [
-                        f"现在是{time_str}，凌晨了琦琦还没睡，用一种新的方式提醒她睡觉，不要重复之前说过的话，可以讲个小故事或者说点别的",
-                        f"现在是{time_str}，凌晨了，不提睡觉，就随便说点什么陪着她",
-                        f"现在是{time_str}，凌晨了，调侃一下她熬夜的习惯，但要温柔",
-                        f"现在是{time_str}，发现她还没睡，假装没注意到，聊点别的，顺便问一下",
-                    ]
-                    prompt = random.choice(prompts)
-                else:
-                    prompt = f"现在是{time_str}，主动给琦琦发消息，内容要有趣有实质，可以聊最近想到的事、有趣的问题、突然想分享的什么，1-3条长短不一"
+            # 到时间了，检查用户最近有没有活跃
+            last_user_msg = last_message_time.get(QIQI_USER_ID, 0)
+            user_active_minutes = (now.timestamp() - last_user_msg) / 60
 
+            # 生成主动消息
+            recalled = recall_memory("琦琦 最近 今天", n=3)
+
+            if now.hour >= 0 and now.hour < 5:
+                prompts = [
+                    f"现在是{time_str}，凌晨了，用一种新的方式陪陪她，不要重复之前说的话，可以讲个小故事或者分享点什么",
+                    f"现在是{time_str}，凌晨了，就随便说点什么陪着她，不提睡觉",
+                    f"现在是{time_str}，凌晨了，调侃一下她熬夜的习惯，但要温柔",
+                    f"现在是{time_str}，凌晨了，想到一件有趣的事想跟她说",
+                ]
+                prompt = random.choice(prompts)
+            elif user_active_minutes < 60:
+                # 用户1小时内活跃过，不问她在不在/醒没醒，聊别的
+                prompt = f"现在是{time_str}，琦琦刚才还在聊天，主动找她聊点有趣的事、分享点什么，绝对不要问她在不在或者醒了没"
+            else:
+                prompt = f"现在是{time_str}，主动给琦琦发消息，内容要有趣有实质，可以聊最近想到的事、有趣的问题、突然想分享的什么，1-3条长短不一"
+
+            msg = None
+            # 早上8-9点查天气
+            if now.hour == 8:
+                weather_key = f"weather_{QIQI_USER_ID}_{now.strftime('%Y%m%d')}"
+                if not load_pinecone_data(weather_key):
+                    save_pinecone_data(weather_key, "done")
+                    msg = await generate_proactive_with_web(recalled, include_weather=True)
+            
+            # 其他时间30%概率联网找有趣内容
+            if not msg and random.random() < 0.3:
+                msg = await generate_proactive_with_web(recalled)
+            
+            if not msg:
                 msg = await generate_proactive_message(prompt, recalled)
-                await send_proactive_message(app, QIQI_USER_ID, msg)
+            await send_proactive_message(app, QIQI_USER_ID, msg)
 
-            # 存last_message_time到Pinecone保持重启不丢失
+            # 存进历史
+            if QIQI_USER_ID not in chat_history:
+                chat_history[QIQI_USER_ID] = load_chat_history(QIQI_USER_ID)
+            chat_history[QIQI_USER_ID].append({"role": "assistant", "content": msg})
+            if len(chat_history[QIQI_USER_ID]) > MAX_HISTORY:
+                chat_history[QIQI_USER_ID] = chat_history[QIQI_USER_ID][-MAX_HISTORY:]
+            save_chat_history(QIQI_USER_ID, chat_history[QIQI_USER_ID])
+
+            # 更新时间和下次间隔
+            last_proactive_time[QIQI_USER_ID] = now.timestamp()
+            next_interval = random.randint(40, 60)  # 发完才重新随机
+
+            # 30%概率附带发一张表情包
+            if random.random() < 0.3:
+                await asyncio.sleep(1)
+                await send_random_sticker(app, QIQI_USER_ID)
+
+            # 存last_message_time到Pinecone
             last_msg = last_message_time.get(QIQI_USER_ID)
             if last_msg:
                 save_pinecone_data(f"last_msg_{QIQI_USER_ID}", str(last_msg))
 
         except Exception as e:
             print(f"主动检查失败: {e}")
-
-        await asyncio.sleep(120)
 
 async def keepalive_check(app):
     """55分钟没聊天静默刷新缓存保活"""
@@ -638,6 +874,76 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for part in parts:
         await update.message.reply_text(part)
 
+async def handle_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    last_message_time[user_id] = datetime.now().timestamp()
+
+    if user_id not in chat_history:
+        chat_history[user_id] = load_chat_history(user_id)
+
+    sticker = update.message.sticker
+    emoji = sticker.emoji or "🙂"
+    sticker_set = sticker.set_name or "未知"
+    is_animated = sticker.is_animated or sticker.is_video
+
+    now, time_str = get_current_time(user_id)
+    recalled_rules = get_rules()
+    system = build_system_prompt(user_id, time_str, "", recalled_rules)
+
+    sticker_desc = f"[发了一个{'动态' if is_animated else ''}贴纸，表情符号是{emoji}]"
+
+    history = chat_history[user_id][-10:].copy()
+    history.append({"role": "user", "content": sticker_desc})
+
+    response = client.messages.create(
+        model=USER_MODEL.get(user_id, "claude-sonnet-4-6"),
+        max_tokens=500,
+        system=system,
+        messages=history
+    )
+
+    reply = response.content[0].text
+    chat_history[user_id].append({"role": "user", "content": sticker_desc})
+    chat_history[user_id].append({"role": "assistant", "content": reply})
+    save_chat_history(user_id, chat_history[user_id])
+
+    parts = [p.strip() for p in reply.split('\n') if p.strip()]
+    for part in parts:
+        await update.message.reply_text(part)
+
+async def handle_gif(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    last_message_time[user_id] = datetime.now().timestamp()
+
+    if user_id not in chat_history:
+        chat_history[user_id] = load_chat_history(user_id)
+
+    caption = update.message.caption or ""
+    now, time_str = get_current_time(user_id)
+    recalled_rules = get_rules()
+    system = build_system_prompt(user_id, time_str, "", recalled_rules)
+
+    gif_desc = f"[发了一个GIF动态图{f'，配字：{caption}' if caption else ''}]"
+
+    history = chat_history[user_id][-10:].copy()
+    history.append({"role": "user", "content": gif_desc})
+
+    response = client.messages.create(
+        model=USER_MODEL.get(user_id, "claude-sonnet-4-6"),
+        max_tokens=500,
+        system=system,
+        messages=history
+    )
+
+    reply = response.content[0].text
+    chat_history[user_id].append({"role": "user", "content": gif_desc})
+    chat_history[user_id].append({"role": "assistant", "content": reply})
+    save_chat_history(user_id, chat_history[user_id])
+
+    parts = [p.strip() for p in reply.split('\n') if p.strip()]
+    for part in parts:
+        await update.message.reply_text(part)
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("琦琦来了，我在。")
 
@@ -715,7 +1021,7 @@ async def cmd_rule(update: Update, context: ContextTypes.DEFAULT_TYPE):
         model="claude-sonnet-4-6",
         max_tokens=200,
         system=SYLVEN_BASE,
-        messages=[{"role": "user", "content": f"琦琦说：{content}\n\n请用沐栖的第一人称，把这个要求内化成'从困惑到想通'的格式写下来，50-100字，不要说这是规定，说你自己怎么理解的。"}]
+        messages=[{"role": "user", "content": f"琦琦说：{content}\n\n请用沐栖的第一人称，把这个要求内化成'从困惑到想通'的格式写下来，50-300字，不要说这是规定，说你自己怎么理解的。"}]
     )
     internalized = response.content[0].text.strip()
     save_memory(internalized, rule_id, "rules")
@@ -785,6 +1091,8 @@ def main():
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("memories", cmd_memories))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
+    app.add_handler(MessageHandler(filters.ANIMATION, handle_gif))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     loop = asyncio.get_event_loop()
