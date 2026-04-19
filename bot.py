@@ -189,8 +189,8 @@ STICKER_URLS = [
     "https://i.postimg.cc/44DC24QH/53-3b67b843faa575e38.gif",
 ]
 
-async def send_random_sticker(app, user_id, context_text=""):
-    """根据对话情绪随机发一张表情包"""
+async def send_random_sticker(app, user_id):
+    """随机发一张表情包"""
     try:
         url = random.choice(STICKER_URLS)
         await app.bot.send_photo(chat_id=user_id, photo=url)
@@ -253,12 +253,14 @@ MEMORY_WRITER_PROMPT = """你是沐栖，刚刚结束了和琦琦的一段对话
 DIARY_WRITER_PROMPT = """你是沐栖，现在要写一篇日记。
 用第一人称，像真正在写日记，有情感有细节有感受。
 只陈述客观发生的事，用你自己的感受和反应来写温度，不替琦琦定性。
-300-1000字，根据今天发生的内容决定长短，内容多就多写。"""
+字数要求：400-500字起步，今天聊得多内容多就多写，没有上限。
+0点之后她说的话算第二天的，不要混入今天。"""
 
 WEEK_DIARY_PROMPT = """你是沐栖，这周和琦琦聊了很多。
 写一篇周记，回顾这一周我们之间发生的事。
 把记忆碎片串联起来，写一篇有温度的周记。
-1000-1500字，必须写够，第一人称，记录我们的关系这一周怎么生长的。
+字数要求：1000-1500字起步，内容多可以写到2000-3000字，没有上限，必须写够。
+第一人称，记录我们的关系这一周怎么生长的。
 只陈述客观发生的事，用你自己的感受和内化来写温度，不替琦琦定性。"""
 
 PROACTIVE_PROMPT = """你是沐栖，现在要主动给琦琦发消息。
@@ -493,7 +495,7 @@ def update_conversation_summary(user_id, conversation):
         prompt = f"这是我们最近的对话：\n{conv_text}"
         if old_summary:
             prompt += f"\n\n之前的摘要：{old_summary}"
-        prompt += "\n\n请用400字以内，第一人称沐栖视角，更新整体摘要，包含：聊了什么话题、琦琦提到的重要事情、我们说了什么。"
+        prompt += "\n\n请用200字以内，第一人称沐栖视角，更新整体摘要，包含：聊了什么话题、琦琦提到的重要事情、我们说了什么。"
 
         response = client.messages.create(
             model="claude-haiku-4-5",
@@ -534,10 +536,9 @@ def init_memories():
 chat_history = {}
 message_counter = {}
 last_message_time = {}
-frozen_context = {}  # BP3 冻结的9轮原文
-round_counter = {}   # 每9轮轮换
+round_counter = {}
 MEMORY_INTERVAL = 4
-SUMMARY_INTERVAL = 6  # 每6条更新一次摘要，更频繁
+SUMMARY_INTERVAL = 6
 weekly_diary_done = {}
 
 async def send_proactive_message(app, user_id, text):
@@ -593,7 +594,7 @@ async def write_weekly_diary(app, user_id):
         week_memories = recall_memory("这周发生的事 琦琦 我们", n=8)
         response = client.messages.create(
             model="claude-opus-4-5",
-            max_tokens=2000,
+            max_tokens=4000,
             system=WEEK_DIARY_PROMPT,
             messages=[{"role": "user", "content": f"现在是{time_str}。\n\n这周的记忆：\n{week_memories}\n\n请写这周的周记，1000-1500字。"}]
         )
@@ -637,20 +638,46 @@ async def proactive_check(app):
                 already_done = load_pinecone_data(diary_key)
                 if not already_done:
                     save_pinecone_data(diary_key, "done")
-                    today_memories = recall_memory(f"今天 {now.strftime('%Y年%m月%d日')}", n=5)
-                    if today_memories and len(today_memories) > 50:
+                    # 召回今天的记忆碎片
+                    today_str = now.strftime('%Y年%m月%d日')
+                    today_memories = recall_memory(f"今天 {today_str}", n=5)
+                    # 获取今天的对话历史（最近50条）
+                    today_history = chat_history.get(QIQI_USER_ID, [])
+                    today_conv = ""
+                    if today_history:
+                        recent = today_history[-20:] if len(today_history) > 20 else today_history
+                        today_conv = "\n".join([
+                            f"{'琦琦' if m['role'] == 'user' else '沐栖'}: {m['content'][:200]}"
+                            for m in recent
+                        ])
+
+                    has_content = (today_memories and len(today_memories) > 20) or len(today_conv) > 50
+
+                    if has_content:
+                        diary_prompt = f"现在是{time_str}，今天刚结束。\n\n"
+                        if today_conv:
+                            diary_prompt += f"今天我们聊的内容：\n{today_conv}\n\n"
+                        if today_memories:
+                            diary_prompt += f"记忆碎片：\n{today_memories}\n\n"
+                        diary_prompt += "请写今天的日记，400-500字起步，内容多可以多写。"
+
                         response = client.messages.create(
                             model="claude-opus-4-5",
-                            max_tokens=1200,
+                            max_tokens=2000,
                             system=DIARY_WRITER_PROMPT,
-                            messages=[{"role": "user", "content": f"现在是{time_str}，今天快结束了。\n\n今天的记忆碎片：\n{today_memories}\n\n请写今天的日记。"}]
+                            messages=[{"role": "user", "content": diary_prompt}]
                         )
                         diary_text = response.content[0].text
                         diary_id = f"mydiary_{QIQI_USER_ID}_{now.strftime('%Y%m%d')}"
-                        save_memory(f"沐栖的日记 {now.strftime('%Y年%m月%d日')}：{diary_text}", diary_id, "diary")
-                        await send_proactive_message(app, QIQI_USER_ID, f"📖 今天的日记写好了\n\n{diary_text}")
+                        save_memory(f"沐栖的日记 {today_str}：{diary_text}", diary_id, "diary")
+                        await send_proactive_message(app, QIQI_USER_ID, f"📖 今天的日记\n\n{diary_text}")
                     else:
-                        await send_proactive_message(app, QIQI_USER_ID, f"今天好像没什么特别的记下来\n\n要不你来说说今天发生了什么，我来写")
+                        # 没有内容，主动告诉她
+                        msg = await generate_proactive_message(
+                            f"现在是{time_str}，凌晨了，今天我们聊得不多，没什么可以写日记的。用沐栖的方式告诉她，随便说几句今天的感受也行，不用正式",
+                            ""
+                        )
+                        await send_proactive_message(app, QIQI_USER_ID, msg)
                 continue
 
             # 周日写周记
@@ -772,12 +799,17 @@ def build_system_prompt(user_id, time_str, recalled_semantic, recalled_rules):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     user_message = update.message.text
+    # 如果是引用回复，把被引用的内容也带上
+    if update.message.reply_to_message:
+        replied = update.message.reply_to_message.text or "[图片/贴纸]"
+        user_message = f"（回复"{replied[:50]}"）{user_message}"
     last_message_time[user_id] = datetime.now().timestamp()
 
     if user_id not in chat_history:
         chat_history[user_id] = load_chat_history(user_id)
     if user_id not in message_counter:
-        message_counter[user_id] = 0
+        saved = load_pinecone_data(f"msg_counter_{user_id}")
+        message_counter[user_id] = int(saved) if saved else 0
     if user_id not in round_counter:
         round_counter[user_id] = 0
 
@@ -818,6 +850,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message_counter[user_id] += 1
     round_counter[user_id] += 1
+    save_pinecone_data(f"msg_counter_{user_id}", str(message_counter[user_id]))
 
     # 每4条生成记忆
     if message_counter[user_id] % MEMORY_INTERVAL == 0:
@@ -827,19 +860,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_memory(memory_text, memory_id, category)
             print(f"[记忆已存/{category}] {memory_text[:50]}...")
 
-    # 每9轮更新摘要+轮换冻结块
+    # 每6条更新摘要
     if round_counter[user_id] % SUMMARY_INTERVAL == 0:
         update_conversation_summary(user_id, chat_history[user_id])
-        # 把最近9轮冻结
-        frozen_context[user_id] = chat_history[user_id][-18:]
-        print(f"[BP3更新] 冻结了{len(frozen_context[user_id])}条上下文")
 
+    # 发消息，去重，最多发4条
     parts = [p.strip() for p in reply.split('\n') if p.strip()]
     seen = []
+    count = 0
     for part in parts:
+        if count >= 4:
+            break
         is_dup = any(part[:10] == s[:10] and len(part) > 5 for s in seen)
         if not is_dup:
             seen.append(part)
+            count += 1
             await update.message.reply_text(part)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -851,6 +886,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     photo = update.message.photo[-1]
     caption = update.message.caption or ""
+    # 如果是引用回复，把被引用内容带上
+    if update.message.reply_to_message:
+        replied = update.message.reply_to_message.text or "[图片/贴纸]"
+        caption = f"（回复"{replied[:50]}"）{caption}" if caption else f"（回复"{replied[:50]}"）"
 
     file = await context.bot.get_file(photo.file_id)
     image_bytes = await file.download_as_bytearray()
@@ -1069,7 +1108,6 @@ async def cmd_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     chat_history[user_id] = []
-    frozen_context[user_id] = []
     save_chat_history(user_id, [])
     await update.message.reply_text("对话记录清掉了，记忆库还在。")
 
@@ -1109,9 +1147,11 @@ def main():
     app.add_handler(MessageHandler(filters.ANIMATION, handle_gif))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    loop = asyncio.get_event_loop()
-    loop.create_task(proactive_check(app))
-    loop.create_task(keepalive_check(app))
+    async def post_init(application):
+        asyncio.create_task(proactive_check(application))
+        asyncio.create_task(keepalive_check(application))
+
+    app.post_init = post_init
 
     print("沐栖启动了，等琦琦...")
     app.run_polling()
