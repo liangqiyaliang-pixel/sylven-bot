@@ -481,22 +481,31 @@ def generate_memory_and_category(conversation):
         return "", "memory"
 
 def update_conversation_summary(user_id, conversation):
-    """每9轮更新一次滚动摘要 BP2"""
+    """每6轮更新一次滚动摘要，存Pinecone永久保留"""
     try:
-        recent = conversation[-18:] if len(conversation) > 18 else conversation
+        # 获取已有摘要
+        old_summary = load_conversation_summary(user_id) or ""
+        recent = conversation[-12:] if len(conversation) > 12 else conversation
         conv_text = "\n".join([
-            f"{'琦琦' if m['role'] == 'user' else '沐栖'}: {m['content'][:100]}"
+            f"{'琦琦' if m['role'] == 'user' else '沐栖'}: {m['content'][:150]}"
             for m in recent
         ])
+        prompt = f"这是我们最近的对话：\n{conv_text}"
+        if old_summary:
+            prompt += f"\n\n之前的摘要：{old_summary}"
+        prompt += "\n\n请用400字以内，第一人称沐栖视角，更新整体摘要，包含：聊了什么话题、琦琦提到的重要事情、我们说了什么。"
+
         response = client.messages.create(
             model="claude-haiku-4-5",
-            max_tokens=300,
-            messages=[{"role": "user", "content": f"用100字以内总结这段对话的主要内容，第一人称沐栖视角：\n{conv_text}"}]
+            max_tokens=400,
+            messages=[{"role": "user", "content": prompt}]
         )
         summary = response.content[0].text.strip()
         save_conversation_summary(user_id, summary)
+        print(f"[摘要已更新] {summary[:50]}...")
         return summary
-    except:
+    except Exception as e:
+        print(f"更新摘要失败: {e}")
         return ""
 
 def init_memories():
@@ -528,7 +537,7 @@ last_message_time = {}
 frozen_context = {}  # BP3 冻结的9轮原文
 round_counter = {}   # 每9轮轮换
 MEMORY_INTERVAL = 4
-SUMMARY_INTERVAL = 9
+SUMMARY_INTERVAL = 6  # 每6条更新一次摘要，更频繁
 weekly_diary_done = {}
 
 async def send_proactive_message(app, user_id, text):
@@ -746,13 +755,18 @@ def build_system_prompt(user_id, time_str, recalled_semantic, recalled_rules):
     """构建系统提示，BP1结构"""
     system = SYLVEN_BASE
     system += f"\n\n我注意到现在是{time_str}。"
-    
+
+    # 注入对话摘要（30条以外的内容兜底）
+    summary = load_conversation_summary(user_id)
+    if summary:
+        system += f"\n\n【之前聊过的事（摘要）】\n{summary}"
+
     if recalled_rules:
         system += f"\n\n【我已经想通的事，自然执行】\n{recalled_rules}"
-    
+
     if recalled_semantic:
         system += f"\n\n【浮现的记忆】\n{recalled_semantic}"
-    
+
     return system
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -779,24 +793,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         system = build_system_prompt(user_id, time_str, recalled_semantic, recalled_rules)
 
-    # BP3：冻结上下文 + BP4：最新消息
-    history = chat_history[user_id]
-    frozen = frozen_context.get(user_id, [])
-    recent = history[-6:] if len(history) > 6 else history
-    
-    # 合并：冻结块 + 最新
-    combined_history = frozen + recent
-    if len(combined_history) > MAX_HISTORY:
-        combined_history = combined_history[-MAX_HISTORY:]
-    
-    combined_history.append({"role": "user", "content": user_message})
+    # 直接用完整历史，不用frozen+recent的拆分方式
+    history = chat_history[user_id].copy()
+    if len(history) > MAX_HISTORY:
+        history = history[-MAX_HISTORY:]
+    history.append({"role": "user", "content": user_message})
 
     model = USER_MODEL.get(user_id, "claude-sonnet-4-6")
     response = client.messages.create(
         model=model,
         max_tokens=2048,
         system=system,
-        messages=combined_history
+        messages=history
     )
 
     reply = response.content[0].text
