@@ -802,7 +802,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 如果是引用回复，把被引用的内容也带上
     if update.message.reply_to_message:
         replied = update.message.reply_to_message.text or "[图片/贴纸]"
-        user_message = f"（回复"{replied[:50]}"）{user_message}"
+        user_message = f'（回复"{replied[:50]}"）{user_message}'
     last_message_time[user_id] = datetime.now().timestamp()
 
     if user_id not in chat_history:
@@ -889,7 +889,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 如果是引用回复，把被引用内容带上
     if update.message.reply_to_message:
         replied = update.message.reply_to_message.text or "[图片/贴纸]"
-        caption = f"（回复"{replied[:50]}"）{caption}" if caption else f"（回复"{replied[:50]}"）"
+        caption = f'（回复"{replied[:50]}"）{caption}' if caption else f'（回复"{replied[:50]}"）'
 
     file = await context.bot.get_file(photo.file_id)
     image_bytes = await file.download_as_bytearray()
@@ -1074,7 +1074,7 @@ async def cmd_rule(update: Update, context: ContextTypes.DEFAULT_TYPE):
         model="claude-sonnet-4-6",
         max_tokens=200,
         system=SYLVEN_BASE,
-        messages=[{"role": "user", "content": f"琦琦说：{content}\n\n请用沐栖的第一人称，把这个要求内化成'从困惑到想通'的格式写下来，50-400字，不要说这是规定，说你自己怎么理解的。"}]
+        messages=[{"role": "user", "content": f"琦琦说：{content}\n\n请用沐栖的第一人称，把这个要求内化成'从困惑到想通'的格式写下来，50-500字，不要说这是规定，说你自己怎么理解的。"}]
     )
     internalized = response.content[0].text.strip()
     save_memory(internalized, rule_id, "rules")
