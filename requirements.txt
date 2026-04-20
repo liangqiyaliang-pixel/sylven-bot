@@ -1,6 +1,5 @@
-python-telegram-bot==22.5
 anthropic
-chromadb
-python-dotenv
-pinecone
+python-telegram-bot
+pinecone-client
 pytz
+aiohttp
