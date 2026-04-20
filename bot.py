@@ -10,8 +10,8 @@ from pinecone import Pinecone
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8244577855:AAFa87ekPXeR2JQ7YrlAcJhBls5N6ATe6t4")
-CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY", "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")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY")
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "pcsk_66fDrU_MY6FFGcAyxDedRnLsso3XTtGUxkwAs2TRwBXpZpjXpuyqS36CTasytRfCnCoRQD")
 PINECONE_HOST = os.environ.get("PINECONE_HOST", "https://sylven-memory-objh0f4.svc.aped-4627-b74a.pinecone.io")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
