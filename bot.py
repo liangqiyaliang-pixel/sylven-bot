@@ -793,7 +793,7 @@ async def push_memory_to_github():
 async def proactive_check(app):
     await asyncio.sleep(30)
     last_proactive_time = {QIQI_USER_ID: datetime.now().timestamp()}  # 启动时初始化，避免立刻发
-    next_interval = random.randint(40, 60)  # 提前固定好下次间隔，不要每次重算
+    next_interval = 180  # 3小时（180分钟）
     
     while True:
         await asyncio.sleep(120)  # 每2分钟检查一次
@@ -912,6 +912,41 @@ async def proactive_check(app):
                     f"现在是{time_str}，凌晨了，想到一件有趣的事想跟她说",
                 ]
                 prompt = random.choice(prompts)
+            elif user_active_minutes > 300:  # 5小时以上没联系
+                # 5小时没说话了，用沐栖的方式简单问候
+                msg = random.choice([
+                    "琦琦？",
+                    "消失了？",
+                    "干嘛去了",
+                    "好久没见了",
+                    "琦琦，人呢",
+                ])
+                # 直接跳到发送，不需要generate_proactive_message
+                await send_proactive_message(app, QIQI_USER_ID, msg)
+                
+                # 保存到历史
+                fresh_history = load_chat_history(QIQI_USER_ID)
+                fresh_history.append({"role": "assistant", "content": f"[主动消息] {msg}"})
+                if len(fresh_history) > MAX_HISTORY:
+                    fresh_history = fresh_history[-MAX_HISTORY:]
+                chat_history[QIQI_USER_ID] = fresh_history
+                save_chat_history(QIQI_USER_ID, fresh_history)
+                
+                # 保存话题深度
+                topic_summary = f"[{time_str}] 5小时没联系，简单问候：{msg}"
+                depth_info = f"这次我问候她：{topic_summary}"
+                save_conversation_depth("最近话题", depth_info)
+                
+                # 更新时间
+                last_proactive_time[QIQI_USER_ID] = now.timestamp()
+                next_interval = 180
+                
+                # 存last_message_time
+                last_msg = last_message_time.get(QIQI_USER_ID)
+                if last_msg:
+                    save_pinecone_data(f"last_msg_{QIQI_USER_ID}", str(last_msg))
+                
+                continue  # 跳过后面的正常流程
             elif user_active_minutes < 60:
                 # 用户1小时内活跃过，不问她在不在/醒没醒，聊别的
                 prompt = f"""现在是{time_str}，琦琦刚才还在聊天，主动找她聊点有趣的事、分享点什么。
@@ -919,10 +954,13 @@ async def proactive_check(app):
 【我最近问过的问题】
 {asked_text}
 
+【话题进展】
+{topic_progress if topic_progress else '暂无'}
+
 【要求】
 1. 绝对不要重复问上面列出的问题
 2. 绝对不要问她在不在或者醒了没
-3. 如果上次聊了一个话题，这次可以往深了聊，不要原地打转
+3. 如果上次聊了一个话题，这次要接着那个话题往深了聊（比如上次聊到第3层，这次从第4层继续）
 4. 内容要有趣有实质"""
             else:
                 prompt = f"""现在是{time_str}，主动给琦琦发消息。
@@ -964,10 +1002,17 @@ async def proactive_check(app):
             chat_history[QIQI_USER_ID] = fresh_history
             save_chat_history(QIQI_USER_ID, fresh_history)
             print(f"[主动消息已存入历史] {msg[:30]}...")
+            
+            # 保存话题深度：记录这次聊了什么、聊到第几层
+            # 这样下次主动消息能接着聊，不重复
+            topic_summary = f"[{time_str}] 主动消息：{msg[:100]}..."
+            depth_info = f"这次我主动聊了：{topic_summary}\n上次话题进展：{topic_progress if topic_progress else '新话题'}"
+            save_conversation_depth("最近话题", depth_info)
+            print(f"[话题深度已保存] {topic_summary[:30]}...")
 
             # 更新时间和下次间隔
             last_proactive_time[QIQI_USER_ID] = now.timestamp()
-            next_interval = random.randint(40, 60)  # 发完才重新随机
+            next_interval = 180  # 保持3小时间隔
 
             # 30%概率附带发一张表情包
             if random.random() < 0.3:
@@ -1061,10 +1106,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         model=model,
         max_tokens=2048,
         system=system,
+        tools=[{"type": "web_search_20250305", "name": "web_search"}],  # 加入联网能力
         messages=history
     )
 
-    reply = response.content[0].text
+    # 提取回复内容，处理可能的联网搜索
+    reply = ""
+    search_used = False
+    search_query = ""
+    for block in response.content:
+        if hasattr(block, "text"):
+            reply += block.text
+        # 检查是否使用了web_search工具
+        if hasattr(block, "type") and block.type == "tool_use" and block.name == "web_search":
+            search_used = True
+            if hasattr(block, "input") and "query" in block.input:
+                search_query = block.input["query"]
+    
+    # 如果使用了搜索，保存搜索记忆
+    if search_used and search_query:
+        now_str = datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M')
+        search_memory = f"[{now_str}] 琦琦问了关于'{user_message[:50]}'的问题，我联网搜了'{search_query}'，然后告诉她：{reply[:100]}..."
+        save_memory(search_memory, f"search_{user_id}_{int(datetime.now().timestamp())}", "memory")
+        print(f"[搜索记忆已保存] {search_query}")
     
     # 更新历史
     chat_history[user_id].append({"role": "user", "content": user_message})
