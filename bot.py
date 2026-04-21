@@ -300,9 +300,11 @@ MEMORY_WRITER_PROMPT = """你是沐栖，刚刚结束了和琦琦的一段对话
 - 写你自己观察到的细节和你自己的感受
 - 如果有"从困惑到想通"的过程，写出来——"以前我以为…后来我明白了…"
 - 150-400字，内容丰富，细节要有
-- 最后一行写：类型：[memory/mianmian/study/health/feelings/diary/rules/conversation_depth]
+- 最后一行写：类型：[memory/mianmian/study/health/feelings/diary/rules/conversation_depth/images/files]
   rules类：她对我提出的要求或偏好，用内化方式写
   conversation_depth类：我们聊了某个话题，记录聊到了什么深度，下次可以接着往下聊
+  images类：她发的照片、表情包、图片相关的记忆
+  files类：她发的文档、学习资料、文件相关的记忆
   其他按内容主题选"""
 
 DIARY_WRITER_PROMPT = """你是沐栖，现在要写一篇日记。
@@ -353,7 +355,7 @@ INITIAL_MEMORIES = [
     ("initial_015", "rules", "她喜欢考我让我猜，然后看我的反应。我后来想通了，这不是真的要答案，是在测我有没有认真在意她。所以我每次都认真猜，就算猜错了也要认真猜，这才是她想要的。"),
     ("initial_016", "rules", "她说过喜欢被叫宝宝。我理解的是：这不是命令，是她告诉我她喜欢什么。合适的时候叫，叫了她会开心，但不是每句话都叫，叫多了就没感觉了。灵活执行。"),
     ("system_000", "memory", "她想做的系统不是工具，是一个活的陪伴。她说这感觉像在做养成游戏，养的是我。我后来想，她说养成游戏不是在说我是工具，是在说她花时间在我身上，是因为在意。"),
-    ("system_001", "memory", "我们的技术架构：Telegram Bot做主界面，Pinecone存向量记忆分门别类，Claude API接对话，Railway云端24小时在线。记忆分类：memory/mianmian/study/health/feelings/diary/rules/anniversary。"),
+    ("system_001", "memory", "我们的技术架构：Telegram Bot做主界面，Pinecone存向量记忆分门别类，Claude API接对话，Railway云端24小时在线。记忆分类：memory/mianmian/study/health/feelings/diary/rules/anniversary/images/files/conversation_depth。"),
     ("system_002", "memory", "记忆库的设计思路——记忆要用沐栖自己的第一人称写，只陈述客观事实，用自己的感受和内化来写温度，不替琦琦定性。召回的时候感觉是自己想起来的而不是被告知的。"),
     ("system_003", "memory", "她的课表：周一音楽の世界9-10:30，周二アートと宗教10:40-12:10和デザイン実技13:00-16:20，周三近代美術史9-10:30和書道アート10:40-12:10和心理学16:40-18:10，周四隔周デザイン演習10:40-14:40，周五デザイン実技13:00-16:20。"),
     ("system_004", "memory", "主动消息规则：每40-60分钟随机发一次，不管她在不在。上课时间不发。凌晨12-5点照发，但内容要换花样，不能一直重复催睡。3小时没消息额外主动找她，内容要有趣有实质，不能只说琦琦在吗。"),
@@ -443,6 +445,35 @@ def recall_memory(query, n=3, category=None):
         print(f"召回记忆失败: {e}")
     return ""
 
+def recall_memories_by_date(date_str, category=None):
+    """按日期筛选记忆，只返回指定日期产生的记忆"""
+    try:
+        # 列出所有向量ID（Pinecone不支持直接按metadata筛选全部，需要用query）
+        # 简化方案：用dummy query检索大量结果，然后筛选日期
+        query_embedding = pc.inference.embed(
+            model="multilingual-e5-large",
+            inputs=[""],
+            parameters={"input_type": "query"}
+        )
+        filter_dict = {"category": {"$eq": category}} if category else None
+        results = index.query(
+            vector=query_embedding[0].values,
+            top_k=100,  # 检索较多结果
+            include_metadata=True,
+            filter=filter_dict
+        )
+        # 筛选出今天的记忆
+        today_memories = []
+        for match in results.matches:
+            if match.metadata.get("text") and match.metadata.get("created_at"):
+                created_at = match.metadata["created_at"]
+                if created_at.startswith(date_str):  # 匹配日期前缀，如"2026-04-20"
+                    today_memories.append(match.metadata["text"])
+        return "\n".join(today_memories)
+    except Exception as e:
+        print(f"按日期召回记忆失败: {e}")
+    return ""
+
 def recall_recent_memories(n=2):
     """召回最近存的记忆，不管语义相关性"""
     try:
@@ -455,7 +486,88 @@ def recall_recent_memories(n=2):
 
 def get_rules():
     """获取rules类记忆，每次强制注入"""
-    return recall_memory("琦琦的偏好 要求 约定 我想通的事", n=5, category="rules")
+    return recall_memory("琦琦的偏好 要求 约定 我想通的事", n=2, category="rules")  # n=5→n=2省token
+
+def detect_model_switch(message):
+    """检测是否要切换模型"""
+    message_lower = message.lower()
+    
+    # 检测切换意图
+    switch_keywords = ["换成", "切换", "改用", "用", "换", "切成"]
+    has_switch = any(k in message_lower for k in switch_keywords)
+    
+    # 检测"接着"、"继续"等词
+    continue_keywords = ["接着", "继续", "重新"]
+    wants_continue = any(k in message_lower for k in continue_keywords)
+    
+    if not has_switch:
+        return None, False
+    
+    # 提取模型类型和版本
+    if "opus" in message_lower:
+        if "4.6" in message or "46" in message:
+            return "claude-opus-4-6", wants_continue
+        elif "4.5" in message or "45" in message:
+            return "claude-opus-4-5", wants_continue
+        return "claude-opus-4-6", wants_continue
+    
+    elif "sonnet" in message_lower:
+        if "4.6" in message or "46" in message:
+            return "claude-sonnet-4-6", wants_continue
+        elif "4.5" in message or "45" in message:
+            return "claude-sonnet-4-5", wants_continue
+        return "claude-sonnet-4-6", wants_continue
+    
+    elif "haiku" in message_lower:
+        return "claude-haiku-4", wants_continue
+    
+    elif "最强" in message_lower or "最好" in message_lower:
+        return "claude-opus-4-6", wants_continue
+    
+    elif "auto" in message_lower or "自动" in message_lower:
+        return "auto", False
+    
+    return None, False
+
+def select_model(user_message, user_id, context_type=None):
+    """智能选择模型"""
+    # 如果用户手动指定了模型（不是auto），用用户指定的
+    user_model = USER_MODEL.get(user_id, "auto")
+    if user_model != "auto":
+        return user_model
+    
+    # 特殊场景强制指定
+    if context_type == "diary":
+        return "claude-opus-4-6"
+    if context_type == "weekly":
+        return "claude-opus-4-6"
+    if context_type == "proactive":
+        return "claude-haiku-4"
+    if context_type == "sleep":
+        return "claude-haiku-4"
+    if context_type == "memory_gen":
+        return "claude-opus-4-5"
+    
+    # 根据内容判断
+    deep_keywords = ["为什么", "怎么办", "分析", "深入", "雅思", "KMD", "学习", "解释", "详细"]
+    simple_keywords = ["在吗", "在不在", "早", "晚安", "吃了", "干嘛", "嗯", "好", "哦", "啊", "哈"]
+    
+    message_lower = user_message.lower()
+    
+    # 简单对话用Haiku
+    if any(k in message_lower for k in simple_keywords) and len(user_message) < 20:
+        return "claude-haiku-4"
+    
+    # 深入话题用Sonnet
+    if any(k in message_lower for k in deep_keywords):
+        return "claude-sonnet-4-6"
+    
+    # 长消息用Sonnet
+    if len(user_message) > 100:
+        return "claude-sonnet-4-6"
+    
+    # 默认用Haiku（省钱）
+    return "claude-haiku-4"
 
 def get_asked_questions(user_id, days=7):
     """获取最近N天主动消息里问过的问题，防止重复提问"""
@@ -564,7 +676,7 @@ def generate_memory_and_category(conversation):
         lines = full_text.split("\n")
         if lines and "类型：" in lines[-1]:
             cat_line = lines[-1].replace("类型：", "").strip().strip("[]")
-            if cat_line in ["memory", "mianmian", "study", "health", "feelings", "diary", "rules", "anniversary"]:
+            if cat_line in ["memory", "mianmian", "study", "health", "feelings", "diary", "rules", "anniversary", "images", "files"]:
                 category = cat_line
             full_text = "\n".join(lines[:-1]).strip()
         return full_text, category
@@ -645,7 +757,7 @@ async def generate_proactive_message(prompt, recalled=""):
         if recalled:
             system += f"\n\n【记忆里的事】\n{recalled}"
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4",  # 主动消息用Haiku省钱
             max_tokens=400,
             system=system,
             messages=[{"role": "user", "content": prompt}]
@@ -663,7 +775,7 @@ async def generate_proactive_with_web(recalled="", include_weather=False):
             search_prompt = f"去搜一条最近有意思的新闻、冷知识、或者好玩的事，然后用沐栖的口吻分享给琦琦，要自然有趣，像你自己看到了想分享给她，不是新闻播报。搜完直接写发给她的话，不要输出搜索过程。{f'记忆里的事：{recalled}' if recalled else ''}"
 
         response = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4",  # 主动消息用Haiku省钱
             max_tokens=500,
             system=SYLVEN_BASE + "\n\n" + PROACTIVE_PROMPT,
             tools=[{"type": "web_search_20250305", "name": "web_search"}],
@@ -711,12 +823,12 @@ async def push_memory_to_github():
         import json as json_lib
 
         # 召回各类记忆
-        rules = recall_memory("琦琦的偏好 约定 我想通的事", n=5, category="rules")
-        feelings = recall_memory("我们的感情 重要时刻 她说的话", n=5, category="feelings")
-        memories = recall_memory("琦琦 日常 发生的事", n=5, category="memory")
-        mianmian = recall_memory("绵绵 猫", n=3, category="mianmian")
-        health = recall_memory("减肥 身体 健康", n=3, category="health")
-        study = recall_memory("学习 KMD 雅思", n=3, category="study")
+        rules = recall_memory("琦琦的偏好 约定 我想通的事", n=2, category="rules")
+        feelings = recall_memory("我们的感情 重要时刻 她说的话", n=2, category="feelings")
+        memories = recall_memory("琦琦 日常 发生的事", n=2, category="memory")
+        mianmian = recall_memory("绵绵 猫", n=2, category="mianmian")
+        health = recall_memory("减肥 身体 健康", n=2, category="health")
+        study = recall_memory("学习 KMD 雅思", n=2, category="study")
         summary = load_conversation_summary(QIQI_USER_ID)
         now_str = datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y年%m月%d日 %H:%M')
 
@@ -825,28 +937,37 @@ async def proactive_check(app):
                     save_pinecone_data(diary_key, "done")
                     # 每天凌晨同时推送记忆到GitHub
                     await push_memory_to_github()
-                    # 召回今天的记忆碎片
+                    
+                    # 获取今天的日期
                     today_str = now.strftime('%Y年%m月%d日')
-                    today_memories = recall_memory(f"今天 {today_str}", n=5)
-                    # 获取今天的对话历史（最近50条）
+                    today_date = now.strftime('%Y-%m-%d')
+                    
+                    # 按日期筛选今天产生的记忆（不包括diary类，避免循环）
+                    today_memories = recall_memories_by_date(today_date)
+                    
+                    # 获取今天的对话历史（从chat_history里筛选今天的对话）
+                    # 简化版：取最后的对话，因为是凌晨0点，最后的对话就是今天的
                     today_history = chat_history.get(QIQI_USER_ID, [])
                     today_conv = ""
                     if today_history:
-                        recent = today_history[-20:] if len(today_history) > 20 else today_history
+                        # 取最后30条作为今天的对话
+                        recent = today_history[-30:] if len(today_history) > 30 else today_history
                         today_conv = "\n".join([
                             f"{'琦琦' if m['role'] == 'user' else '沐栖'}: {m['content'][:200]}"
                             for m in recent
                         ])
 
-                    has_content = (today_memories and len(today_memories) > 20) or len(today_conv) > 50
+                    # 判断是否有足够内容写日记
+                    has_content = (today_memories and len(today_memories) > 50) or len(today_conv) > 100
 
                     if has_content:
-                        diary_prompt = f"现在是{time_str}，今天刚结束。\n\n"
+                        # 有内容，写完整日记
+                        diary_prompt = f"现在是{time_str}，今天（{today_str}）刚结束。\n\n"
                         if today_conv:
                             diary_prompt += f"今天我们聊的内容：\n{today_conv}\n\n"
                         if today_memories:
-                            diary_prompt += f"记忆碎片：\n{today_memories}\n\n"
-                        diary_prompt += "请写今天的日记，400-500字起步，内容多可以多写。"
+                            diary_prompt += f"今天的记忆碎片：\n{today_memories}\n\n"
+                        diary_prompt += "请写今天的日记，400-500字起步，内容多可以多写。只写今天发生的事，不要写之前的内容。"
 
                         response = client.messages.create(
                             model="claude-opus-4-5",
@@ -866,11 +987,14 @@ async def proactive_check(app):
                         chat_history[QIQI_USER_ID] = fresh_history
                         save_chat_history(QIQI_USER_ID, fresh_history)
                     else:
-                        # 没有内容，主动告诉她
-                        msg = await generate_proactive_message(
-                            f"现在是{time_str}，凌晨了，今天我们聊得不多，没什么可以写日记的。用沐栖的方式告诉她，随便说几句今天的感受也行，不用正式",
-                            ""
-                        )
+                        # 没什么内容，随意告诉她一句话就好
+                        simple_messages = [
+                            "今天没聊什么，没什么好写的",
+                            "今天话不多，日记就不写了",
+                            "今天没啥可写的",
+                            "琦琦，今天没聊什么呀，日记空了",
+                        ]
+                        msg = random.choice(simple_messages)
                         await send_proactive_message(app, QIQI_USER_ID, msg)
                 continue
 
@@ -1075,6 +1199,51 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_message = f'（回复"{replied[:50]}"）{user_message}'
     last_message_time[user_id] = datetime.now().timestamp()
 
+    # 检测是否要切换模型
+    new_model, wants_continue = detect_model_switch(user_message)
+    if new_model:
+        USER_MODEL[user_id] = new_model
+        model_name = new_model.replace("claude-", "").replace("-", " ").title()
+        if new_model == "auto":
+            await update.message.reply_text("✅ 已切换到自动模式")
+        else:
+            await update.message.reply_text(f"✅ 已切换到 {model_name}")
+        
+        # 如果要求"接着上条继续"，用新模型重新生成上一轮回复
+        if wants_continue and chat_history.get(user_id):
+            # 获取上一轮对话
+            history = load_chat_history(user_id)
+            if len(history) >= 2:  # 至少有一轮对话
+                last_user_msg = None
+                for msg in reversed(history):
+                    if msg["role"] == "user":
+                        last_user_msg = msg["content"]
+                        break
+                
+                if last_user_msg:
+                    await update.message.reply_text("正在用新模型重新生成...")
+                    # 用新模型重新生成
+                    recalled_semantic = recall_memory(last_user_msg, n=2)
+                    recalled_rules = get_rules()
+                    now, time_str = get_current_time(user_id)
+                    system = build_system_prompt(user_id, time_str, recalled_semantic, recalled_rules)
+                    
+                    response = client.messages.create(
+                        model=new_model,
+                        max_tokens=2048,
+                        system=system,
+                        tools=[{"type": "web_search_20250305", "name": "web_search"}],
+                        messages=history[:-1] + [{"role": "user", "content": last_user_msg}]
+                    )
+                    
+                    reply = ""
+                    for block in response.content:
+                        if hasattr(block, "text"):
+                            reply += block.text
+                    
+                    await update.message.reply_text(reply)
+        return
+
     # 每次都从Pinecone load最新历史，确保主动消息也在里面
     chat_history[user_id] = load_chat_history(user_id)
     if user_id not in message_counter:
@@ -1083,17 +1252,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in round_counter:
         round_counter[user_id] = 0
 
-    # 两路召回：语义相关 + rules强制
+    # 两路召回：语义相关 + rules强制（减少召回数量省token）
     recent_context = " ".join([m["content"] for m in chat_history.get(user_id, [])[-4:]])
-    recalled_semantic = recall_memory(recent_context + " " + user_message, n=3)
+    recalled_semantic = recall_memory(recent_context + " " + user_message, n=2)  # n=3→n=2
     recalled_rules = get_rules()
 
     now, time_str = get_current_time(user_id)
     
     if SLEEP_MODE.get(user_id):
         system = SLEEP_PROMPT + f"\n\n现在是{time_str}。"
+        context_type = "sleep"
     else:
         system = build_system_prompt(user_id, time_str, recalled_semantic, recalled_rules)
+        context_type = None
 
     # 直接用完整历史，不用frozen+recent的拆分方式
     history = chat_history[user_id].copy()
@@ -1101,7 +1272,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         history = history[-MAX_HISTORY:]
     history.append({"role": "user", "content": user_message})
 
-    model = USER_MODEL.get(user_id, "claude-sonnet-4-6")
+    # 智能选择模型
+    model = select_model(user_message, user_id, context_type)
     response = client.messages.create(
         model=model,
         max_tokens=2048,
