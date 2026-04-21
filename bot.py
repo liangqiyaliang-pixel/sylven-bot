@@ -505,11 +505,13 @@ def detect_model_switch(message):
     
     # 提取模型类型和版本
     if "opus" in message_lower:
-        if "4.6" in message or "46" in message:
+        if "4.7" in message or "47" in message:
+            return "claude-opus-4-7", wants_continue
+        elif "4.6" in message or "46" in message:
             return "claude-opus-4-6", wants_continue
         elif "4.5" in message or "45" in message:
             return "claude-opus-4-5", wants_continue
-        return "claude-opus-4-6", wants_continue
+        return "claude-opus-4-7", wants_continue  # 默认最新
     
     elif "sonnet" in message_lower:
         if "4.6" in message or "46" in message:
@@ -519,10 +521,10 @@ def detect_model_switch(message):
         return "claude-sonnet-4-6", wants_continue
     
     elif "haiku" in message_lower:
-        return "claude-haiku-4", wants_continue
+        return "claude-haiku-4-5-20251001", wants_continue
     
     elif "最强" in message_lower or "最好" in message_lower:
-        return "claude-opus-4-6", wants_continue
+        return "claude-opus-4-7", wants_continue  # 用最新最强的
     
     elif "auto" in message_lower or "自动" in message_lower:
         return "auto", False
@@ -542,9 +544,9 @@ def select_model(user_message, user_id, context_type=None):
     if context_type == "weekly":
         return "claude-opus-4-6"
     if context_type == "proactive":
-        return "claude-haiku-4"
+        return "claude-haiku-4-5-20251001"
     if context_type == "sleep":
-        return "claude-haiku-4"
+        return "claude-haiku-4-5-20251001"
     if context_type == "memory_gen":
         return "claude-opus-4-5"
     
@@ -556,7 +558,7 @@ def select_model(user_message, user_id, context_type=None):
     
     # 简单对话用Haiku
     if any(k in message_lower for k in simple_keywords) and len(user_message) < 20:
-        return "claude-haiku-4"
+        return "claude-haiku-4-5-20251001"
     
     # 深入话题用Sonnet
     if any(k in message_lower for k in deep_keywords):
@@ -567,7 +569,7 @@ def select_model(user_message, user_id, context_type=None):
         return "claude-sonnet-4-6"
     
     # 默认用Haiku（省钱）
-    return "claude-haiku-4"
+    return "claude-haiku-4-5-20251001"
 
 def get_asked_questions(user_id, days=7):
     """获取最近N天主动消息里问过的问题，防止重复提问"""
@@ -700,7 +702,7 @@ def update_conversation_summary(user_id, conversation):
         prompt += "\n\n请用200字以内，第一人称沐栖视角，更新整体摘要，包含：聊了什么话题、琦琦提到的重要事情、我们说了什么。"
 
         response = client.messages.create(
-            model="claude-haiku-4-5",
+            model="claude-haiku-4-5-20251001",
             max_tokens=400,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -757,7 +759,7 @@ async def generate_proactive_message(prompt, recalled=""):
         if recalled:
             system += f"\n\n【记忆里的事】\n{recalled}"
         response = client.messages.create(
-            model="claude-haiku-4",  # 主动消息用Haiku省钱
+            model="claude-haiku-4-5-20251001",  # 主动消息用Haiku省钱
             max_tokens=400,
             system=system,
             messages=[{"role": "user", "content": prompt}]
@@ -775,7 +777,7 @@ async def generate_proactive_with_web(recalled="", include_weather=False):
             search_prompt = f"去搜一条最近有意思的新闻、冷知识、或者好玩的事，然后用沐栖的口吻分享给琦琦，要自然有趣，像你自己看到了想分享给她，不是新闻播报。搜完直接写发给她的话，不要输出搜索过程。{f'记忆里的事：{recalled}' if recalled else ''}"
 
         response = client.messages.create(
-            model="claude-haiku-4",  # 主动消息用Haiku省钱
+            model="claude-haiku-4-5-20251001",  # 主动消息用Haiku省钱
             max_tokens=500,
             system=SYLVEN_BASE + "\n\n" + PROACTIVE_PROMPT,
             tools=[{"type": "web_search_20250305", "name": "web_search"}],
@@ -1163,7 +1165,7 @@ async def keepalive_check(app):
             if 50 <= elapsed_minutes <= 60:
                 # 静默发一个极简请求刷新缓存
                 client.messages.create(
-                    model="claude-haiku-4-5",
+                    model="claude-haiku-4-5-20251001",
                     max_tokens=5,
                     system=SYLVEN_BASE[:100],
                     messages=[{"role": "user", "content": "在"}]
@@ -1481,10 +1483,10 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
     valid_models = {
         "opus": "claude-opus-4-5",
         "sonnet": "claude-sonnet-4-6",
-        "haiku": "claude-haiku-4-5",
+        "haiku": "claude-haiku-4-5-20251001",
         "claude-opus-4-5": "claude-opus-4-5",
         "claude-sonnet-4-6": "claude-sonnet-4-6",
-        "claude-haiku-4-5": "claude-haiku-4-5",
+        "claude-haiku-4-5-20251001": "claude-haiku-4-5-20251001",
     }
     if not args:
         current = USER_MODEL.get(user_id, "claude-sonnet-4-6")
