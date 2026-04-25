@@ -838,7 +838,11 @@ def get_asked_questions(user_id, days=7):
 def save_conversation_depth(topic, depth_info):
     """保存话题的深度信息，记录聊到了哪一层"""
     try:
-        memory_id = f"conv_depth_{topic}_{int(datetime.now().timestamp())}"
+        # Pinecone vector ID 必须是 ASCII，topic 可能含中文，
+        # 用 md5 hash 取前 12 位转成纯 ASCII
+        import hashlib
+        topic_hash = hashlib.md5(topic.encode('utf-8')).hexdigest()[:12]
+        memory_id = f"conv_depth_{topic_hash}_{int(datetime.now().timestamp())}"
         save_memory(depth_info, memory_id, "conversation_depth")
     except Exception as e:
         print(f"保存对话深度失败: {e}")
