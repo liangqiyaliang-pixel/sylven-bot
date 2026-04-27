@@ -2757,9 +2757,10 @@ def _normalize_for_match(s):
     import re as _re
     return _re.sub(r'[\s，。！？、；：""''「」【】《》()（）.,!?;:""\'\'\\-]+', '', s).lower()
 
-def _find_text_in_history(history, target_text, start_from=0):
+def _find_text_in_history(history, target_text, start_from=0, skip_commands=True):
     """
     在 chat_history 里找包含 target_text 的位置(模糊匹配)
+    skip_commands=True 时跳过 /xxx 开头的命令消息(避免命令本身被当对话内容)
     返回索引,找不到返回 -1
     """
     target_norm = _normalize_for_match(target_text)
@@ -2768,6 +2769,9 @@ def _find_text_in_history(history, target_text, start_from=0):
     for i in range(start_from, len(history)):
         content = history[i].get('content', '')
         if isinstance(content, str):
+            # 跳过命令消息
+            if skip_commands and content.lstrip().startswith('/'):
+                continue
             content_norm = _normalize_for_match(content)
             if target_norm in content_norm:
                 return i
@@ -2789,36 +2793,63 @@ async def cmd_cleanup_range(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 去掉命令本身,留下参数
     args_text = full_text.replace('/cleanup_range', '', 1).replace('/cleanup_range@', '', 1).strip()
 
-    # 二次确认
-    if args_text.strip().lower() == 'confirm':
+    # 二次确认(支持多选): /cleanup_range confirm        → 全删 chat+memory
+    #                  /cleanup_range confirm 1,3,5  → chat 全删, memory 只删编号 1,3,5
+    #                  /cleanup_range confirm none   → chat 全删, memory 一条都不删
+    if args_text.lower().startswith('confirm'):
         pending = _pending_cleanup_range.get(user_id)
         if not pending:
             await update.message.reply_text("没有待确认的删除任务。先用 /cleanup_range 开始那句 | 结束那句")
             return
         try:
+            # 解析 confirm 后面的参数
+            confirm_arg = args_text[len('confirm'):].strip()
+            mem_ids_all = pending.get("mem_ids", [])
+            mem_ids_to_delete = []
+
+            if confirm_arg == '' or confirm_arg.lower() == 'all':
+                # 全删 memory
+                mem_ids_to_delete = mem_ids_all
+            elif confirm_arg.lower() == 'none':
+                # 只删 chat 不删 memory
+                mem_ids_to_delete = []
+            else:
+                # 解析编号列表 "1,3,5" 或 "1 3 5"
+                try:
+                    raw_indices = confirm_arg.replace(',', ' ').replace(',', ' ').split()
+                    selected = [int(x.strip()) - 1 for x in raw_indices if x.strip()]
+                    for idx in selected:
+                        if 0 <= idx < len(mem_ids_all):
+                            mem_ids_to_delete.append(mem_ids_all[idx])
+                except ValueError:
+                    await update.message.reply_text("编号格式错。例: /cleanup_range confirm 1,3,5")
+                    return
+
             # 删 chat_history
             history = chat_history.get(user_id, load_chat_history(user_id))
             start_idx, end_idx = pending["chat_idx"]
             new_history = history[:start_idx] + history[end_idx + 1:]
             chat_history[user_id] = new_history
             save_chat_history(user_id, new_history)
-            chat_msg = f"删了 chat_history {end_idx - start_idx + 1} 条"
+            chat_msg = f"✅ 删了 chat_history {end_idx - start_idx + 1} 条"
 
             # 删 memory
-            mem_ids = pending.get("mem_ids", [])
             mem_msg = ""
-            if mem_ids:
-                index.delete(ids=mem_ids)
-                mem_msg = f"\n删了 memory {len(mem_ids)} 条"
+            if mem_ids_to_delete:
+                index.delete(ids=mem_ids_to_delete)
+                mem_msg = f"\n✅ 删了选中的 memory {len(mem_ids_to_delete)} 条"
+            else:
+                mem_msg = "\n📌 memory 一条没动"
 
             _pending_cleanup_range.pop(user_id, None)
-            await update.message.reply_text(f"✅ {chat_msg}{mem_msg}")
+            await update.message.reply_text(f"{chat_msg}{mem_msg}")
         except Exception as e:
             await update.message.reply_text(f"删除失败: {e}")
         return
 
-    # 解析两个端点
-    if '|' not in args_text:
+    # 解析两个端点(兼容全角竖线｜)
+    args_text_normalized = args_text.replace('｜', '|')
+    if '|' not in args_text_normalized:
         await update.message.reply_text(
             "用法:\n"
             "/cleanup_range 开始那句 | 结束那句\n\n"
@@ -2828,7 +2859,7 @@ async def cmd_cleanup_range(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    parts = args_text.split('|', 1)
+    parts = args_text_normalized.split('|', 1)
     start_text = parts[0].strip()
     end_text = parts[1].strip()
 
@@ -2873,7 +2904,7 @@ async def cmd_cleanup_range(update: Update, context: ContextTypes.DEFAULT_TYPE):
         preview_lines.append(f"  ...还有 {seg_count - 5} 条")
     chat_preview = "\n".join(preview_lines)
 
-    # 用整段对话内容做语义搜索 → 找相关记忆
+    # 用整段对话内容做语义搜索 → 找相关记忆 (top 20, 全列让用户选)
     combined = " ".join([m.get('content', '') for m in segment if isinstance(m.get('content'), str)])
     combined_short = combined[:1500]  # 限制长度
     mem_ids = []
@@ -2882,17 +2913,17 @@ async def cmd_cleanup_range(update: Update, context: ContextTypes.DEFAULT_TYPE):
         emb = get_embedding(combined_short)
         results = index.query(
             vector=emb,
-            top_k=5,
+            top_k=20,
             include_metadata=True
         )
         if results.matches:
             mem_lines = []
             for j, m in enumerate(results.matches):
-                if m.score < 0.4:  # 相关度太低跳过
-                    continue
+                # 不再做相关度阈值过滤——全部列出让用户选
                 mem_ids.append(m.id)
-                text = m.metadata.get('text', '')[:60]
-                mem_lines.append(f"  [{j+1}] (相关度{m.score:.2f}) {text}...")
+                text = m.metadata.get('text', '')[:80]
+                category = m.metadata.get('category', '?')
+                mem_lines.append(f"  [{j+1}] (相关度{m.score:.2f}, 类别:{category}) {text}...")
             if mem_lines:
                 mem_preview = "\n".join(mem_lines)
     except Exception as e:
@@ -2908,8 +2939,12 @@ async def cmd_cleanup_range(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📋 找到这段(chat_history 第 {start_idx+1}~{end_idx+1} 条,共 {seg_count} 条)"
         f"{end_note}\n\n"
         f"**chat_history 预览:**\n{chat_preview}\n\n"
-        f"**关联的 memory(语义搜索 top 5):**\n{mem_preview}\n\n"
-        f"确认删除发: /cleanup_range confirm\n"
+        f"**关联的 memory(top 20,你自己选删哪些):**\n{mem_preview}\n\n"
+        f"━━━━━━━━━━━━━\n"
+        f"**确认删除——三种方式:**\n"
+        f"`/cleanup_range confirm 1,3,5` 只删编号 1、3、5 的 memory(chat 那段全删)\n"
+        f"`/cleanup_range confirm none` 一条 memory 都不删,只删 chat 那段\n"
+        f"`/cleanup_range confirm all` 全删(chat 全删 + 所有 memory 全删)\n\n"
         f"放弃就不用管,5 分钟后自动失效"
     )
     await update.message.reply_text(msg[:4000])
