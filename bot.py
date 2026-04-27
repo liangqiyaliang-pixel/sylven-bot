@@ -2747,6 +2747,173 @@ async def cmd_cleanup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 待确认删除的 memory ids
 _pending_cleanup_memory = {}
 
+# ========== 新增：/cleanup_range 按内容定位区间一次性删 chat+memory ==========
+_pending_cleanup_range = {}  # user_id -> {"chat_idx": (start, end), "mem_ids": [...], "preview": "..."}
+
+def _normalize_for_match(s):
+    """标准化用于模糊匹配:去标点空格,转小写"""
+    if not s:
+        return ""
+    import re as _re
+    return _re.sub(r'[\s，。！？、；：""''「」【】《》()（）.,!?;:""\'\'\\-]+', '', s).lower()
+
+def _find_text_in_history(history, target_text, start_from=0):
+    """
+    在 chat_history 里找包含 target_text 的位置(模糊匹配)
+    返回索引,找不到返回 -1
+    """
+    target_norm = _normalize_for_match(target_text)
+    if len(target_norm) < 4:
+        return -1  # 太短不可靠
+    for i in range(start_from, len(history)):
+        content = history[i].get('content', '')
+        if isinstance(content, str):
+            content_norm = _normalize_for_match(content)
+            if target_norm in content_norm:
+                return i
+            # 对长目标做更宽松匹配(80% 字符在内容里出现)
+            if len(target_norm) >= 8:
+                hits = sum(1 for c in target_norm if c in content_norm)
+                if hits / len(target_norm) >= 0.85 and target_norm[:6] in content_norm:
+                    return i
+    return -1
+
+async def cmd_cleanup_range(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    按内容定位删除一段对话 + 相关记忆
+    用法: /cleanup_range 开始那句 | 结束那句
+         /cleanup_range confirm    (二次确认删除)
+    """
+    user_id = str(update.effective_user.id)
+    full_text = update.message.text or ""
+    # 去掉命令本身,留下参数
+    args_text = full_text.replace('/cleanup_range', '', 1).replace('/cleanup_range@', '', 1).strip()
+
+    # 二次确认
+    if args_text.strip().lower() == 'confirm':
+        pending = _pending_cleanup_range.get(user_id)
+        if not pending:
+            await update.message.reply_text("没有待确认的删除任务。先用 /cleanup_range 开始那句 | 结束那句")
+            return
+        try:
+            # 删 chat_history
+            history = chat_history.get(user_id, load_chat_history(user_id))
+            start_idx, end_idx = pending["chat_idx"]
+            new_history = history[:start_idx] + history[end_idx + 1:]
+            chat_history[user_id] = new_history
+            save_chat_history(user_id, new_history)
+            chat_msg = f"删了 chat_history {end_idx - start_idx + 1} 条"
+
+            # 删 memory
+            mem_ids = pending.get("mem_ids", [])
+            mem_msg = ""
+            if mem_ids:
+                index.delete(ids=mem_ids)
+                mem_msg = f"\n删了 memory {len(mem_ids)} 条"
+
+            _pending_cleanup_range.pop(user_id, None)
+            await update.message.reply_text(f"✅ {chat_msg}{mem_msg}")
+        except Exception as e:
+            await update.message.reply_text(f"删除失败: {e}")
+        return
+
+    # 解析两个端点
+    if '|' not in args_text:
+        await update.message.reply_text(
+            "用法:\n"
+            "/cleanup_range 开始那句 | 结束那句\n\n"
+            "例: /cleanup_range 我觉得我们要写一个prompt | 你说的现在问你你说的话\n\n"
+            "中间用 | 分隔,不用写太精确,大概意思就行。\n"
+            "/cleanup_range confirm  (确认删除)"
+        )
+        return
+
+    parts = args_text.split('|', 1)
+    start_text = parts[0].strip()
+    end_text = parts[1].strip()
+
+    if len(start_text) < 4 or len(end_text) < 4:
+        await update.message.reply_text("两段端点都至少 4 个字以上,不然不可靠")
+        return
+
+    # 在 chat_history 里找
+    history = chat_history.get(user_id, load_chat_history(user_id))
+    if not history:
+        await update.message.reply_text("chat_history 是空的")
+        return
+
+    start_idx = _find_text_in_history(history, start_text)
+    if start_idx == -1:
+        await update.message.reply_text(f"chat_history 里没找到「{start_text[:30]}...」,试着换个更独特的词")
+        return
+
+    end_idx = _find_text_in_history(history, end_text, start_from=start_idx)
+    if end_idx == -1:
+        # 找不到结束 = 删到末尾
+        end_idx = len(history) - 1
+        end_note = "(没找到结束端点,默认删到最后)"
+    else:
+        end_note = ""
+
+    if end_idx < start_idx:
+        await update.message.reply_text("结束端点在开始之前,顺序反了")
+        return
+
+    # 取这段对话
+    segment = history[start_idx:end_idx + 1]
+    seg_count = len(segment)
+
+    # 预览段落
+    preview_lines = []
+    for i, m in enumerate(segment[:5]):
+        role = "你" if m.get('role') == 'user' else "沐栖"
+        c = m.get('content', '')[:50]
+        preview_lines.append(f"  [{i+1}] {role}: {c}...")
+    if seg_count > 5:
+        preview_lines.append(f"  ...还有 {seg_count - 5} 条")
+    chat_preview = "\n".join(preview_lines)
+
+    # 用整段对话内容做语义搜索 → 找相关记忆
+    combined = " ".join([m.get('content', '') for m in segment if isinstance(m.get('content'), str)])
+    combined_short = combined[:1500]  # 限制长度
+    mem_ids = []
+    mem_preview = "(没找到相关记忆)"
+    try:
+        emb = get_embedding(combined_short)
+        results = index.query(
+            vector=emb,
+            top_k=5,
+            include_metadata=True
+        )
+        if results.matches:
+            mem_lines = []
+            for j, m in enumerate(results.matches):
+                if m.score < 0.4:  # 相关度太低跳过
+                    continue
+                mem_ids.append(m.id)
+                text = m.metadata.get('text', '')[:60]
+                mem_lines.append(f"  [{j+1}] (相关度{m.score:.2f}) {text}...")
+            if mem_lines:
+                mem_preview = "\n".join(mem_lines)
+    except Exception as e:
+        mem_preview = f"(记忆搜索失败: {e})"
+
+    # 存 pending
+    _pending_cleanup_range[user_id] = {
+        "chat_idx": (start_idx, end_idx),
+        "mem_ids": mem_ids,
+    }
+
+    msg = (
+        f"📋 找到这段(chat_history 第 {start_idx+1}~{end_idx+1} 条,共 {seg_count} 条)"
+        f"{end_note}\n\n"
+        f"**chat_history 预览:**\n{chat_preview}\n\n"
+        f"**关联的 memory(语义搜索 top 5):**\n{mem_preview}\n\n"
+        f"确认删除发: /cleanup_range confirm\n"
+        f"放弃就不用管,5 分钟后自动失效"
+    )
+    await update.message.reply_text(msg[:4000])
+
 # ========== 新增：/novel 文体开关 ==========
 async def cmd_novel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """切换文体: /novel on（强制小说体）/ off（强制日常）/ auto（自动判断）/ status（看当前）"""
@@ -2924,6 +3091,7 @@ def main():
     app.add_handler(CommandHandler("pin", cmd_pin))
     app.add_handler(CommandHandler("novel", cmd_novel))
     app.add_handler(CommandHandler("cleanup", cmd_cleanup))
+    app.add_handler(CommandHandler("cleanup_range", cmd_cleanup_range))
     app.add_handler(CommandHandler("cost", cmd_cost))
     app.add_handler(CommandHandler("anniversary", cmd_anniversary))
     app.add_handler(CommandHandler("location", cmd_location))
