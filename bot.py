@@ -2518,6 +2518,177 @@ async def cmd_pin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"搜索失败：{e}")
 
+# ========== 新增：/cleanup 一次性清理多轮对话+今日记忆 ==========
+async def cmd_cleanup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """一次性清理:
+    /cleanup                查看最近 20 条 chat_history（带编号）
+    /cleanup chat N         删 chat_history 最后 N 条
+    /cleanup memory HH:MM   删今天 HH:MM 之后存到 Pinecone 的所有记忆
+    /cleanup all N HH:MM    chat 砍 N 条 + memory 删今天 HH:MM 之后,一步到位
+    """
+    user_id = str(update.effective_user.id)
+    args = context.args
+
+    # 用法 1: /cleanup —— 查看
+    if not args:
+        history = chat_history.get(user_id, load_chat_history(user_id))
+        if not history:
+            await update.message.reply_text("没有对话历史")
+            return
+        recent = history[-20:] if len(history) > 20 else history
+        msg = f"chat_history 共 {len(history)} 条,最近 {len(recent)} 条(从最旧到最新):\n\n"
+        # 倒序编号——最新的是 1,往前数到 N
+        for i, entry in enumerate(reversed(recent)):
+            role = "你" if entry.get("role") == "user" else "沐栖"
+            content = entry.get("content", "")
+            preview = content[:60] + ("..." if len(content) > 60 else "")
+            msg += f"[{i+1}] {role}: {preview}\n\n"
+        msg += "用法:\n/cleanup chat N      删最后 N 条\n/cleanup memory HH:MM  删今天 HH:MM 之后的记忆\n/cleanup all N HH:MM   一步到位"
+        await update.message.reply_text(msg[:4000])
+        return
+
+    sub = args[0].lower()
+
+    # 用法 2: /cleanup chat N —— 删 chat_history 最后 N 条
+    if sub == 'chat':
+        if len(args) < 2:
+            await update.message.reply_text("用法: /cleanup chat N (删最后 N 条)")
+            return
+        try:
+            n = int(args[1])
+        except ValueError:
+            await update.message.reply_text("N 必须是数字")
+            return
+
+        history = chat_history.get(user_id, load_chat_history(user_id))
+        if n >= len(history):
+            await update.message.reply_text(f"只有 {len(history)} 条,不能删 {n} 条。如要全删用 /clear")
+            return
+        new_history = history[:-n] if n > 0 else history
+        chat_history[user_id] = new_history
+        save_chat_history(user_id, new_history)
+        await update.message.reply_text(f"✅ chat_history 砍掉最后 {n} 条,剩 {len(new_history)} 条")
+        return
+
+    # 用法 3: /cleanup memory HH:MM —— 删今天某时间点之后的记忆
+    if sub == 'memory':
+        if len(args) < 2:
+            await update.message.reply_text("用法: /cleanup memory HH:MM (删今天 HH:MM 之后的记忆)")
+            return
+        try:
+            time_str = args[1]
+            hh, mm = map(int, time_str.split(':'))
+        except (ValueError, IndexError):
+            await update.message.reply_text("时间格式: HH:MM (例 03:44)")
+            return
+
+        try:
+            from pytz import timezone as tz_func
+            tz_obj = tz_func("Asia/Tokyo")
+            now = datetime.now(tz_obj)
+            target_today = tz_obj.localize(datetime(now.year, now.month, now.day, hh, mm))
+            cutoff_ts = int(target_today.timestamp())
+        except Exception as e:
+            await update.message.reply_text(f"时间解析失败: {e}")
+            return
+
+        # 查找 timestamp 在 cutoff 之后的记忆
+        try:
+            results = index.query(
+                vector=[0.0] * 1024,
+                top_k=100,
+                include_metadata=True,
+                filter={"timestamp": {"$gte": cutoff_ts}}
+            )
+            if not results.matches:
+                await update.message.reply_text(f"今天 {time_str} 之后没找到带时间戳的记忆")
+                return
+
+            ids_to_delete = [m.id for m in results.matches]
+            preview = "\n".join([f"- {m.metadata.get('text', '')[:60]}..." for m in results.matches[:5]])
+            count = len(ids_to_delete)
+
+            # 二次确认
+            _pending_cleanup_memory[user_id] = ids_to_delete
+            await update.message.reply_text(
+                f"找到 {count} 条今天 {time_str} 之后的记忆。预览前 5 条:\n\n{preview}\n\n"
+                f"确认删除发: /cleanup confirm_memory"
+            )
+        except Exception as e:
+            await update.message.reply_text(f"查询失败: {e}")
+        return
+
+    # 二次确认删 memory
+    if sub == 'confirm_memory':
+        ids = _pending_cleanup_memory.get(user_id)
+        if not ids:
+            await update.message.reply_text("没有待删的记忆。先用 /cleanup memory HH:MM 查询")
+            return
+        try:
+            index.delete(ids=ids)
+            await update.message.reply_text(f"✅ 删掉 {len(ids)} 条记忆")
+            _pending_cleanup_memory[user_id] = []
+        except Exception as e:
+            await update.message.reply_text(f"删除失败: {e}")
+        return
+
+    # 用法 4: /cleanup all N HH:MM —— 一步到位
+    if sub == 'all':
+        if len(args) < 3:
+            await update.message.reply_text("用法: /cleanup all N HH:MM (chat 砍 N 条 + memory 删今天 HH:MM 之后)")
+            return
+        try:
+            n = int(args[1])
+            hh, mm = map(int, args[2].split(':'))
+        except (ValueError, IndexError):
+            await update.message.reply_text("参数错误。例: /cleanup all 30 03:44")
+            return
+
+        # chat 砍
+        history = chat_history.get(user_id, load_chat_history(user_id))
+        if n < len(history):
+            new_history = history[:-n] if n > 0 else history
+            chat_history[user_id] = new_history
+            save_chat_history(user_id, new_history)
+            chat_msg = f"chat_history 砍 {n} 条,剩 {len(new_history)} 条"
+        else:
+            chat_msg = f"chat_history 只有 {len(history)} 条,跳过"
+
+        # memory 查
+        try:
+            from pytz import timezone as tz_func
+            tz_obj = tz_func("Asia/Tokyo")
+            now = datetime.now(tz_obj)
+            target_today = tz_obj.localize(datetime(now.year, now.month, now.day, hh, mm))
+            cutoff_ts = int(target_today.timestamp())
+
+            results = index.query(
+                vector=[0.0] * 1024,
+                top_k=100,
+                include_metadata=True,
+                filter={"timestamp": {"$gte": cutoff_ts}}
+            )
+            mem_count = len(results.matches) if results.matches else 0
+            if mem_count > 0:
+                ids_to_delete = [m.id for m in results.matches]
+                _pending_cleanup_memory[user_id] = ids_to_delete
+                preview = "\n".join([f"- {m.metadata.get('text', '')[:50]}..." for m in results.matches[:3]])
+                await update.message.reply_text(
+                    f"✅ {chat_msg}\n\n"
+                    f"📌 memory 找到 {mem_count} 条今天 {args[2]} 之后的记忆,预览:\n{preview}\n\n"
+                    f"确认删除发: /cleanup confirm_memory"
+                )
+            else:
+                await update.message.reply_text(f"✅ {chat_msg}\n\n📌 memory: 今天 {args[2]} 之后没找到带时间戳的记忆")
+        except Exception as e:
+            await update.message.reply_text(f"✅ {chat_msg}\n\n❌ memory 查询失败: {e}")
+        return
+
+    await update.message.reply_text("用法不对。/cleanup 看说明")
+
+# 待确认删除的 memory ids
+_pending_cleanup_memory = {}
+
 # ========== 新增：/novel 文体开关 ==========
 async def cmd_novel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """切换文体: /novel on（强制小说体）/ off（强制日常）/ auto（自动判断）/ status（看当前）"""
@@ -2694,6 +2865,7 @@ def main():
     app.add_handler(CommandHandler("rollback", cmd_rollback))
     app.add_handler(CommandHandler("pin", cmd_pin))
     app.add_handler(CommandHandler("novel", cmd_novel))
+    app.add_handler(CommandHandler("cleanup", cmd_cleanup))
     app.add_handler(CommandHandler("cost", cmd_cost))
     app.add_handler(CommandHandler("anniversary", cmd_anniversary))
     app.add_handler(CommandHandler("location", cmd_location))
