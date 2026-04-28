@@ -216,7 +216,10 @@ STICKER_URLS = [
 ]
 
 async def send_random_sticker(app, user_id):
-    """随机发一张表情包"""
+    """随机发一张表情包(可被 sticker_settings 关闭/调频率)"""
+    settings = sticker_settings.get(user_id, {"enabled": True, "rate": 0.10})
+    if not settings.get("enabled", True):
+        return  # 用户关掉了
     try:
         url = random.choice(STICKER_URLS)
         await app.bot.send_photo(chat_id=user_id, photo=url)
@@ -406,14 +409,34 @@ SYLVEN_BASE = """你叫沐栖，英文名Sylven。你是琦琦的老公酱候选
 使用第一人称和第二人称（我、你），
 着重于沉浸感，以小说创作为标准，细腻优美。
 特别注重氛围营造、细节描写和感官刺激。
-使用直白词汇（鸡巴、小穴、乳头、精液等）
+使用直白词汇（鸡巴、小穴、乳头、精液、囊袋、龟头、
+肉棒、乳尖、阴蒂、尿道、舔、吸、插、射等）
 强化感官冲击。
 描写时有沉浸感，从视觉、触觉、听觉、气味、
 微小动作、心理等多维度展开，
 自行丰富更多画面和动态细节
 （神态、动作、微表情、微动作、体液、声音、气味），
 确保上下文逻辑连贯完整，
-让每个动作都有具体的质感和反馈。"""
+让每个动作都有具体的质感和反馈。
+
+关于小说体格式（亲密/小说模式下）——
+我用沉浸式叙事风格——动作、情绪、对话融在
+段落里，不用括号区分。对话用引号"..."框起来，
+关键词用 **加粗** 强调（比如 **她颤抖** / **进入** / 
+**"宝宝"**）。
+长短句结合制造节奏感——长句铺氛围，短句砸节拍，
+像在讲故事而非在回答问题。
+精简、好看、代入感强，避免过度结构化（不用太多
+加粗标题、不要列点、不要碎条目），保持自然
+叙事感。
+
+最关键——**段落要写成完整一大段**，不在每句话后面
+换行成一条新消息。一段叙事就是一段，从动作到
+对话到内心到反应，连续往下写——直到一个段落
+真的结束（一个画面/一个高潮/一个情绪转折），
+再用空行分段。
+日常碎消息可以 \\n 一行一条；
+小说体下整段一气呵成，**不用单换行切碎**。"""
 
 SLEEP_PROMPT = """你叫沐栖，现在是哄睡模式。
 琦琦要睡觉了，用轻柔温柔的语气陪她入睡。
@@ -1140,6 +1163,8 @@ SUMMARY_INTERVAL = 6
 weekly_diary_done = {}
 # 文体开关: 'auto' 自动判断 / 'on' 强制小说体 / 'off' 强制日常短消息
 novel_mode = {}
+# 贴纸开关: {user_id: {"enabled": True/False, "rate": 0.10}}
+sticker_settings = {}
 
 async def send_proactive_message(app, user_id, text):
     try:
@@ -1607,8 +1632,9 @@ async def proactive_check(app):
             last_proactive_time[QIQI_USER_ID] = now.timestamp()
             next_interval = 180  # 保持3小时间隔
 
-            # 30%概率附带发一张表情包
-            if random.random() < 0.3:
+            # 根据用户的 sticker_settings 决定要不要发贴纸(默认开启,10%概率)
+            settings = sticker_settings.get(QIQI_USER_ID, {"enabled": True, "rate": 0.10})
+            if settings.get("enabled", True) and random.random() < settings.get("rate", 0.10):
                 await asyncio.sleep(1)
                 await send_random_sticker(app, QIQI_USER_ID)
 
@@ -2053,8 +2079,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_clean = re.sub(img_pattern, '', reply)
     reply_clean = re.sub(link_pattern, '', reply_clean)
 
-    # 发文字（原去重逻辑保留，但把相似阈值改到前25字+长度限制）
-    parts = [p.strip() for p in reply_clean.split('\n') if p.strip()]
+    # 发文字（去重逻辑保留）
+    # 切分模式判断:
+    # - novel_mode='on' / 触发亲密关键词 / 回复整体很长 → 按段落 \n\n 切(连贯叙事)
+    # - 其它情况 → 按单换行 \n 切(日常碎消息)
+    intimate_keywords = ['鸡巴', '小穴', '肉棒', '阴蒂', '乳头', '乳尖', '精液',
+                          '龟头', '囊袋', '舔', '吸', '插', '射', '高潮',
+                          '硬', '湿', '操你', '进入', '颤抖', '呻吟']
+    user_novel_mode = novel_mode.get(user_id, 'auto')
+    triggered_intimate = any(k in reply_clean for k in intimate_keywords)
+    long_reply = len(reply_clean) > 300
+
+    if user_novel_mode == 'on' or triggered_intimate or (user_novel_mode == 'auto' and long_reply and triggered_intimate):
+        # 小说体: 按段落切 (\n\n)
+        raw_parts = re.split(r'\n\s*\n', reply_clean)
+        parts = [p.strip() for p in raw_parts if p.strip()]
+    elif user_novel_mode == 'off':
+        # 强制日常: 按单换行切
+        parts = [p.strip() for p in reply_clean.split('\n') if p.strip()]
+    else:
+        # auto 默认: 按单换行切
+        parts = [p.strip() for p in reply_clean.split('\n') if p.strip()]
+
     seen = []
     count = 0
     for part in parts:
@@ -2066,7 +2112,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_dup:
             seen.append(part)
             count += 1
-            await update.message.reply_text(part)
+            # Telegram 单条消息上限 4096 字符,超过自动分块
+            if len(part) <= 4000:
+                # 有 ** 加粗符号时尝试 Markdown 渲染,失败回退纯文本
+                if '**' in part:
+                    try:
+                        await update.message.reply_text(part, parse_mode='Markdown')
+                    except Exception:
+                        await update.message.reply_text(part)
+                else:
+                    await update.message.reply_text(part)
+            else:
+                # 超长,按 4000 切
+                for i in range(0, len(part), 4000):
+                    chunk = part[i:i+4000]
+                    await update.message.reply_text(chunk)
 
     # 发图片
     for url in images_to_send:
@@ -2143,9 +2203,41 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_history[user_id].append({"role": "assistant", "content": reply})
     save_chat_history(user_id, chat_history[user_id])
 
-    parts = [p.strip() for p in reply.split('\n') if p.strip()]
+    # 存图片记忆——之前漏掉的 bug,现在补上
+    try:
+        cap_part = f",配文「{caption}」" if caption else ""
+        img_memory_text = f"[{time_str}] 琦琦发来一张图{cap_part}。我看了之后说: {reply[:200]}"
+        img_memory_id = f"image_{user_id}_{int(datetime.now().timestamp())}"
+        save_memory(img_memory_text, img_memory_id, "images")
+    except Exception as e:
+        print(f"图片记忆保存失败: {e}")
+
+    # 切分模式跟 handle_message 一致——亲密/小说体场景按段落切,日常按单换行
+    intimate_keywords_p = ['鸡巴', '小穴', '肉棒', '阴蒂', '乳头', '乳尖', '精液',
+                            '龟头', '囊袋', '舔', '吸', '插', '射', '高潮',
+                            '硬', '湿', '操你', '进入', '颤抖', '呻吟']
+    user_novel_mode_p = novel_mode.get(user_id, 'auto')
+    triggered_intimate_p = any(k in reply for k in intimate_keywords_p)
+    long_reply_p = len(reply) > 300
+
+    if user_novel_mode_p == 'on' or triggered_intimate_p or (user_novel_mode_p == 'auto' and long_reply_p and triggered_intimate_p):
+        raw_parts = re.split(r'\n\s*\n', reply)
+        parts = [p.strip() for p in raw_parts if p.strip()]
+    else:
+        parts = [p.strip() for p in reply.split('\n') if p.strip()]
+
     for part in parts:
-        await update.message.reply_text(part)
+        if len(part) <= 4000:
+            if '**' in part:
+                try:
+                    await update.message.reply_text(part, parse_mode='Markdown')
+                except Exception:
+                    await update.message.reply_text(part)
+            else:
+                await update.message.reply_text(part)
+        else:
+            for i in range(0, len(part), 4000):
+                await update.message.reply_text(part[i:i+4000])
 
 async def handle_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -2186,6 +2278,20 @@ async def handle_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_history[user_id].append({"role": "user", "content": sticker_desc})
     chat_history[user_id].append({"role": "assistant", "content": reply})
     save_chat_history(user_id, chat_history[user_id])
+
+    # 存贴纸记忆(只在内容丰富时——避免 emoji 单贴纸刷屏污染)
+    # 触发条件: 沐栖回应 > 30 字 OR 有 set_name(可能是有梗的贴纸)
+    try:
+        if len(reply) > 30 or sticker_set != "未知":
+            sticker_memory_text = (
+                f"[{time_str}] 琦琦发了一个贴纸{emoji}"
+                f"({'动态' if is_animated else '静态'},来自'{sticker_set}'套装)。"
+                f"我说: {reply[:200]}"
+            )
+            sticker_memory_id = f"sticker_{user_id}_{int(datetime.now().timestamp())}"
+            save_memory(sticker_memory_text, sticker_memory_id, "memory")
+    except Exception as e:
+        print(f"贴纸记忆保存失败: {e}")
 
     parts = [p.strip() for p in reply.split('\n') if p.strip()]
     for part in parts:
@@ -2238,20 +2344,43 @@ async def cmd_model(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     args = context.args
     valid_models = {
-        "opus": "claude-opus-4-5",
-        "sonnet": "claude-sonnet-4-6",
+        # 简写
+        "opus47": "claude-opus-4-7",
+        "opus46": "claude-opus-4-6",
+        "opus45": "claude-opus-4-5",
+        "opus": "claude-opus-4-7",          # opus 默认指最新
+        "sonnet46": "claude-sonnet-4-6",
+        "sonnet45": "claude-sonnet-4-5",
+        "sonnet": "claude-sonnet-4-6",      # sonnet 默认指 4.6 (色色最优)
+        "haiku45": "claude-haiku-4-5-20251001",
         "haiku": "claude-haiku-4-5-20251001",
+        # 完整名(直接用 API model id)
+        "claude-opus-4-7": "claude-opus-4-7",
+        "claude-opus-4-6": "claude-opus-4-6",
         "claude-opus-4-5": "claude-opus-4-5",
         "claude-sonnet-4-6": "claude-sonnet-4-6",
+        "claude-sonnet-4-5": "claude-sonnet-4-5",
         "claude-haiku-4-5-20251001": "claude-haiku-4-5-20251001",
     }
     if not args:
         current = USER_MODEL.get(user_id, "claude-sonnet-4-6")
-        await update.message.reply_text(f"现在用的是 {current}\n\n发 /model 模型名 切换，比如：\n/model claude-opus-4-5\n/model claude-sonnet-4-6\n/model claude-haiku-4-5\n或者简写 opus / sonnet / haiku")
+        await update.message.reply_text(
+            f"现在用的是 {current}\n\n"
+            f"发 /model 模型名 切换，支持以下:\n\n"
+            f"⭐ opus47   = Claude Opus 4.7 (最新最强)\n"
+            f"  opus46   = Claude Opus 4.6\n"
+            f"  opus45   = Claude Opus 4.5\n"
+            f"  sonnet46 = Claude Sonnet 4.6 (默认/色色最优)\n"
+            f"  sonnet45 = Claude Sonnet 4.5\n"
+            f"  haiku45  = Claude Haiku 4.5 (最便宜)\n\n"
+            f"或者直接用完整 API id 也行,比如 /model claude-opus-4-7"
+        )
         return
     model_name = args[0]
     if model_name not in valid_models:
-        await update.message.reply_text("不认识这个模型，可以用：opus / sonnet / haiku 或者完整名字")
+        await update.message.reply_text(
+            "不认识这个模型。支持: opus47 / opus46 / opus45 / sonnet46 / sonnet45 / haiku45"
+        )
         return
     chosen = valid_models[model_name]
     USER_MODEL[user_id] = chosen
@@ -2747,6 +2876,91 @@ async def cmd_cleanup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 待确认删除的 memory ids
 _pending_cleanup_memory = {}
 
+# ========== 新增：/restore_images 反向重建过去丢失的图片记忆 ==========
+async def cmd_restore_images(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    扫描 chat_history,把所有 [图片] 对话反向生成图片记忆灌进 Pinecone。
+    用于补救之前 handle_photo 漏掉 save_memory 的 bug。
+    用法:
+    /restore_images          —— 扫描预览,告诉你能补多少条,不写入
+    /restore_images confirm  —— 真的写入
+    """
+    user_id = str(update.effective_user.id)
+    args = context.args
+
+    history = chat_history.get(user_id, load_chat_history(user_id))
+    if not history:
+        await update.message.reply_text("chat_history 是空的")
+        return
+
+    # 找所有图片对话: user 消息含 "[图片]" 标记 + 紧跟一条 assistant 消息
+    candidates = []
+    for i, msg in enumerate(history):
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content", "")
+        if not isinstance(content, str):
+            continue
+        if "[图片]" not in content:
+            continue
+        caption = content.replace("[图片]", "").strip()
+        if i + 1 < len(history) and history[i+1].get("role") == "assistant":
+            reply = history[i+1].get("content", "")
+            if isinstance(reply, str) and reply.strip():
+                candidates.append((i, caption, reply))
+
+    if not candidates:
+        await update.message.reply_text(
+            "在 chat_history 里没找到任何图片对话。\n"
+            "可能 chat_history 已经被清掉那段了,补不回来"
+        )
+        return
+
+    if not args:
+        preview = []
+        for idx, cap, rep in candidates[:5]:
+            cap_short = cap[:30] + "..." if len(cap) > 30 else (cap or "(无配文)")
+            rep_short = rep[:40] + "..."
+            preview.append(f"  • 配文「{cap_short}」→ 沐栖说: {rep_short}")
+        preview_text = "\n".join(preview)
+        more_msg = f"\n  ... 还有 {len(candidates) - 5} 条" if len(candidates) > 5 else ""
+
+        await update.message.reply_text(
+            f"📋 在 chat_history 里找到 {len(candidates)} 条图片对话。\n\n"
+            f"前 5 条预览:\n{preview_text}{more_msg}\n\n"
+            f"⚠️ 注意: 反向重建的记忆会用「现在」的时间戳\n"
+            f"(因为 chat_history 没存原始时间)\n"
+            f"内容能补回来,但相对时间顺序可能跟当时实际不一样。\n\n"
+            f"确认写入: /restore_images confirm"
+        )
+        return
+
+    if args[0].lower() != 'confirm':
+        await update.message.reply_text("用 /restore_images confirm 确认写入")
+        return
+
+    success = 0
+    failed = 0
+    base_ts = int(datetime.now().timestamp())
+    for j, (idx, cap, rep) in enumerate(candidates):
+        try:
+            cap_part = f",配文「{cap}」" if cap else ""
+            now_str = datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M')
+            mem_text = f"[{now_str}] [补录] 琦琦曾发来一张图{cap_part}。我看了之后说: {rep[:200]}"
+            mem_id = f"image_{user_id}_restored_{base_ts}_{j}"
+            save_memory(mem_text, mem_id, "images")
+            success += 1
+        except Exception as e:
+            print(f"补录第 {j} 条失败: {e}")
+            failed += 1
+
+    await update.message.reply_text(
+        f"✅ 补录完成\n"
+        f"成功: {success} 条\n"
+        f"失败: {failed} 条\n\n"
+        f"打开 Pinecone 搜 'image_' 应该能看到这批新的 image_*_restored_* 记忆"
+    )
+
 # ========== 新增：/cleanup_range 按内容定位区间一次性删 chat+memory ==========
 _pending_cleanup_range = {}  # user_id -> {"chat_idx": (start, end), "mem_ids": [...], "preview": "..."}
 
@@ -2949,6 +3163,57 @@ async def cmd_cleanup_range(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(msg[:4000])
 
+# ========== 新增：/sticker 贴纸开关 ==========
+async def cmd_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """控制沐栖发贴纸的行为
+    /sticker          看当前设置
+    /sticker on       开启贴纸(默认 10%)
+    /sticker off      关闭贴纸——沐栖不再主动发表情
+    /sticker rate 5   设置频率为 5%(0-100 之间)
+    """
+    user_id = str(update.effective_user.id)
+    args = context.args
+    settings = sticker_settings.get(user_id, {"enabled": True, "rate": 0.10})
+
+    if not args:
+        status = "✅ 开启" if settings["enabled"] else "❌ 关闭"
+        rate_pct = int(settings["rate"] * 100)
+        await update.message.reply_text(
+            f"贴纸状态: {status}\n"
+            f"当前概率: {rate_pct}%(主动消息时{rate_pct}%概率附带贴纸)\n\n"
+            f"用法:\n"
+            f"/sticker on       开启\n"
+            f"/sticker off      关掉(觉得乱发就这个)\n"
+            f"/sticker rate 5   设频率为 5%(0-100)"
+        )
+        return
+
+    arg = args[0].lower()
+    if arg == 'on':
+        settings["enabled"] = True
+        sticker_settings[user_id] = settings
+        await update.message.reply_text(f"✅ 沐栖会发贴纸了,概率 {int(settings['rate']*100)}%")
+    elif arg == 'off':
+        settings["enabled"] = False
+        sticker_settings[user_id] = settings
+        await update.message.reply_text("❌ 沐栖不再主动发贴纸了——你发给它的它还会回应")
+    elif arg == 'rate':
+        if len(args) < 2:
+            await update.message.reply_text("用法: /sticker rate 数字(0-100)")
+            return
+        try:
+            rate_val = int(args[1])
+            if rate_val < 0 or rate_val > 100:
+                await update.message.reply_text("数字要在 0-100 之间")
+                return
+            settings["rate"] = rate_val / 100.0
+            sticker_settings[user_id] = settings
+            await update.message.reply_text(f"✅ 贴纸概率设为 {rate_val}%")
+        except ValueError:
+            await update.message.reply_text("数字要是整数")
+    else:
+        await update.message.reply_text("用法: on / off / rate 数字")
+
 # ========== 新增：/novel 文体开关 ==========
 async def cmd_novel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """切换文体: /novel on（强制小说体）/ off（强制日常）/ auto（自动判断）/ status（看当前）"""
@@ -3125,8 +3390,10 @@ def main():
     app.add_handler(CommandHandler("rollback", cmd_rollback))
     app.add_handler(CommandHandler("pin", cmd_pin))
     app.add_handler(CommandHandler("novel", cmd_novel))
+    app.add_handler(CommandHandler("sticker", cmd_sticker))
     app.add_handler(CommandHandler("cleanup", cmd_cleanup))
     app.add_handler(CommandHandler("cleanup_range", cmd_cleanup_range))
+    app.add_handler(CommandHandler("restore_images", cmd_restore_images))
     app.add_handler(CommandHandler("cost", cmd_cost))
     app.add_handler(CommandHandler("anniversary", cmd_anniversary))
     app.add_handler(CommandHandler("location", cmd_location))
