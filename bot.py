@@ -604,6 +604,22 @@ def get_embedding(text):
         print(f"获取向量失败: {e}")
         return [0.0] * 1024
 
+_TRUNC_FIELDS = {"text", "full_content", "image_description", "chat_context", "value"}
+_MAX_META_BYTES = 35000
+_MAX_FIELD_CHARS = 8000
+
+def truncate_metadata(metadata: dict) -> dict:
+    raw_size = len(json.dumps(metadata, ensure_ascii=False).encode("utf-8"))
+    if raw_size <= _MAX_META_BYTES:
+        return metadata
+    result = dict(metadata)
+    for field in _TRUNC_FIELDS:
+        if field in result and isinstance(result[field], str) and len(result[field]) > _MAX_FIELD_CHARS:
+            result[field] = result[field][:_MAX_FIELD_CHARS] + "...[truncated]"
+    new_size = len(json.dumps(result, ensure_ascii=False).encode("utf-8"))
+    print(f"[metadata trimmed: {raw_size} bytes -> {new_size} bytes]")
+    return result
+
 def save_memory(memory_text, memory_id, category="memory"):
     try:
         now = datetime.now(pytz.timezone('Asia/Tokyo'))
@@ -613,15 +629,14 @@ def save_memory(memory_text, memory_id, category="memory"):
         index.upsert(vectors=[{
             "id": memory_id,
             "values": embedding,
-            "metadata": {
+            "metadata": truncate_metadata({
                 "text": full_text,
                 "category": category,
                 "created_at": now_str,
-                # 新加的时间字段——支持按时间范围检索
                 "timestamp": int(now.timestamp()),
                 "date": now.strftime('%Y-%m-%d'),
                 "weekday": now.strftime('%A'),
-            }
+            })
         }])
     except Exception as e:
         print(f"存记忆失败: {e}")
@@ -983,7 +998,7 @@ def save_pinecone_data(key, value):
         index.upsert(vectors=[{
             "id": f"data_{key}",
             "values": dummy_vector,
-            "metadata": {"type": "data", "key": key, "value": str(value)}
+            "metadata": truncate_metadata({"type": "data", "key": key, "value": str(value)})
         }])
     except Exception as e:
         print(f"保存数据失败: {e}")
@@ -1000,8 +1015,12 @@ def load_pinecone_data(key):
 def save_chat_history(user_id, history):
     try:
         history_text = json.dumps(history, ensure_ascii=False)
-        if len(history_text) > 35000:
+        # check bytes (not chars) — Chinese chars are 3 bytes each in UTF-8
+        if len(history_text.encode("utf-8")) > 35000:
             history = history[-20:]
+            history_text = json.dumps(history, ensure_ascii=False)
+        if len(history_text.encode("utf-8")) > 35000:
+            history = history[-10:]
             history_text = json.dumps(history, ensure_ascii=False)
         dummy_vector = [0.0] * 1024
         dummy_vector[0] = 1.0
@@ -1100,7 +1119,7 @@ def init_memories():
                 index.upsert(vectors=[{
                     "id": memory_id,
                     "values": embedding,
-                    "metadata": {"text": memory_text, "category": category}
+                    "metadata": truncate_metadata({"text": memory_text, "category": category})
                 }])
             except:
                 pass
@@ -1136,7 +1155,7 @@ def migrate_pinned_categories():
                 index.upsert(vectors=[{
                     "id": mid,
                     "values": embedding,
-                    "metadata": {"text": text, "category": "pinned"}
+                    "metadata": truncate_metadata({"text": text, "category": "pinned"})
                 }])
             except Exception as e:
                 print(f"  迁移 {mid} 失败: {e}")
@@ -2612,7 +2631,7 @@ async def cmd_pin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 index.upsert(vectors=[{
                     "id": target["id"],
                     "values": emb,
-                    "metadata": {"text": target["text"], "category": "pinned"}
+                    "metadata": truncate_metadata({"text": target["text"], "category": "pinned"})
                 }])
                 _pending_pin.pop(user_id, None)
                 await update.message.reply_text(f"📌 钉住了——\n{target['text'][:80]}...")
