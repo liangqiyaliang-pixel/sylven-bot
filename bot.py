@@ -620,12 +620,39 @@ def truncate_metadata(metadata: dict) -> dict:
     print(f"[metadata trimmed: {raw_size} bytes -> {new_size} bytes]")
     return result
 
+# ========== Phase 2-A: 情感权重 + 时间衰减 ==========
+_EMO_BASE = {
+    "pinned": 1.0, "anniversary": 0.95,
+    "feelings": 0.85, "intimate": 0.85, "nsfw": 0.80,
+    "rules": 0.75, "mianmian": 0.70,
+    "diary": 0.60, "memory": 0.50, "images": 0.50,
+    "health": 0.45, "study": 0.40,
+    "conversation_depth": 0.35, "files": 0.30,
+}
+_EMO_KEYWORDS = [
+    "喜欢", "爱", "第一次", "永远", "难过", "生气", "害怕", "讨厌", "记住", "心疼", "想你",
+]
+_HALF_LIFE_DAYS = {
+    "pinned": 999999, "anniversary": 999999, "rules": 999999,
+    "feelings": 365, "mianmian": 365,
+    "intimate": 180, "memory": 60,
+    "diary": 90, "nsfw": 90,
+    "images": 60, "health": 60,
+    "study": 30, "conversation_depth": 14, "files": 30,
+}
+
+def calculate_emotional_weight(text: str, category: str) -> float:
+    base = _EMO_BASE.get(category, 0.5)
+    hits = sum(1 for kw in _EMO_KEYWORDS if kw in text)
+    return min(1.0, base + hits * 0.1)
+
 def save_memory(memory_text, memory_id, category="memory"):
     try:
         now = datetime.now(pytz.timezone('Asia/Tokyo'))
         now_str = now.strftime('%Y-%m-%d %H:%M')
         full_text = f"[{now_str}] {memory_text}"
         embedding = get_embedding(full_text)
+        emo_weight = calculate_emotional_weight(memory_text, category)
         index.upsert(vectors=[{
             "id": memory_id,
             "values": embedding,
@@ -636,6 +663,8 @@ def save_memory(memory_text, memory_id, category="memory"):
                 "timestamp": int(now.timestamp()),
                 "date": now.strftime('%Y-%m-%d'),
                 "weekday": now.strftime('%A'),
+                "emo_weight": emo_weight,
+                "access_count": 0,
             })
         }])
     except Exception as e:
@@ -734,21 +763,63 @@ def keyword_recall(query, n=3, category=None):
         print(f"关键词召回失败: {e}")
         return ""
 
-# ========== 新增：混合召回（向量 + 关键词 取并集去重）==========
+# ========== 混合召回（语义 top15 重排 + 关键词兜底）==========
 def hybrid_recall(query, n=3, category=None, time_range=None):
-    """两路召回合并——语义抓意思，关键词抓模糊提及。"""
-    semantic = recall_memory(query, n=n, category=category, time_range=time_range)
-    keyword = keyword_recall(query, n=n, category=category)
+    """
+    语义召回 top_k=15 → Python 侧情感权重+时间衰减重排 → 取前 n
+    + 关键词召回兜底，最终合并去重。
+    """
+    import math
+    semantic_top = []
+    try:
+        q_emb = pc.inference.embed(
+            model="multilingual-e5-large",
+            inputs=[query],
+            parameters={"input_type": "query"}
+        )
+        filter_dict = {}
+        if category:
+            filter_dict["category"] = {"$eq": category}
+        if time_range:
+            filter_dict["timestamp"] = {"$gte": int(time_range[0]), "$lte": int(time_range[1])}
+        results = index.query(
+            vector=q_emb[0].values,
+            top_k=15,
+            include_metadata=True,
+            filter=filter_dict if filter_dict else None
+        )
+        now_ts = datetime.now().timestamp()
+        scored = []
+        for match in results.matches:
+            meta = match.metadata
+            text = meta.get("text", "")
+            if not text:
+                continue
+            cat = meta.get("category", "memory")
+            emo = float(meta.get("emo_weight", _EMO_BASE.get(cat, 0.5)))
+            access = int(meta.get("access_count", 0))
+            ts = int(meta.get("timestamp", 0))
+            age_days = max(0.0, (now_ts - ts) / 86400.0) if ts else 30.0
+            hl = _HALF_LIFE_DAYS.get(cat, 60)
+            decayed = emo * math.exp(-math.log(2) * age_days / hl) if hl < 999999 else emo
+            final = match.score * 0.6 + decayed * 0.3 + math.log1p(access) * 0.1
+            scored.append((final, text))
+        scored.sort(reverse=True, key=lambda x: x[0])
+        semantic_top = [t for _, t in scored[:n]]
+    except Exception as e:
+        print(f"[hybrid_recall 语义段] {e}")
+        semantic_top = recall_memory(query, n=n, category=category, time_range=time_range).split("\n")
 
-    # 去重合并
+    keyword = keyword_recall(query, n=n, category=category)
+    kw_lines = [l.strip() for l in keyword.split("\n") if l.strip()]
+
     seen = set()
     merged = []
-    for line in (semantic + "\n" + keyword).split("\n"):
-        line = line.strip()
+    for line in semantic_top + kw_lines:
         if line and line not in seen:
             seen.add(line)
             merged.append(line)
-    return "\n".join(merged[:n + 2])  # 混合后稍微多放一两条
+    return "\n".join(merged[:n + 2])
 
 # ========== 新增：时间意图检测 ==========
 def detect_time_intent(msg):
