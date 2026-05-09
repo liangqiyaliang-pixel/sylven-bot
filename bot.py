@@ -1085,14 +1085,15 @@ def update_conversation_summary(user_id, conversation):
             f"{'琦琦' if m['role'] == 'user' else '沐栖'}: {m['content'][:150]}"
             for m in recent
         ])
-        prompt = f"这是我们最近的对话：\n{conv_text}"
+        prompt = f"刚才和琦琦又聊了一段：\n{conv_text}"
         if old_summary:
-            prompt += f"\n\n之前的摘要：{old_summary}"
-        prompt += "\n\n请用200字以内，第一人称沐栖视角，更新整体摘要，包含：聊了什么话题、琦琦提到的重要事情、我们说了什么。"
+            prompt += f"\n\n之前我记着的是：{old_summary}"
+        prompt += "\n\n接着上面记的，把刚才聊了什么、她说了什么重要的事，用自己的感受补上去，150字以内，第一人称，不用分项，就像心里记事一样自然写下来。"
 
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=400,
+            system=SYLVEN_BASE,
             messages=[{"role": "user", "content": prompt}]
         )
         summary = response.content[0].text.strip()
@@ -2189,7 +2190,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 图片场景：除非caption有"分析""看看""这个是什么"这种明确诉求，否则用Haiku省钱
     analytical_keywords = ["分析", "看看", "这是什么", "详细", "解释", "讲讲"]
     use_sonnet = any(k in caption for k in analytical_keywords)
-    photo_model = "claude-sonnet-4-6" if use_sonnet else "claude-haiku-4-5-20251001"
+    photo_model = "claude-sonnet-4-6"  # Haiku 4.5 不支持 Vision，统一用 Sonnet
 
     # 历史清理 [主动消息] 标签
     raw = chat_history[user_id][-10:]
