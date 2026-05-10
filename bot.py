@@ -1503,11 +1503,16 @@ async def explore_writing_style():
     到时候 Vault 可视化能看到他的碎碎念。
     """
     topics = [
-        "AO3 亲密场景描写技巧 慢热 铺垫",
-        "现代言情 感官描写 张力 写作手法",
-        "小说 亲密 气氛 沉浸 叙事技巧",
-        "中文言情小说 亲密场景 细节描写",
-        "小红书 亲密写作 沉浸感 情感铺垫",
+        "slow burn writing techniques fanfiction AO3",
+        "how to write intimacy without being explicit literary fiction",
+        "sensory writing techniques immersive prose",
+        "reddit r/writing how to write tension and longing",
+        "romance novel pacing slow build emotional intimacy craft",
+        "Haruki Murakami sensory writing style analysis",
+        "how to write desire and wanting in literary fiction",
+        "AO3 fanfiction craft discussion slow burn",
+        "wattpad romance writing tips emotional depth",
+        "how great authors write intimate scenes literary technique",
     ]
     topic = random.choice(topics)
     try:
@@ -1517,10 +1522,11 @@ async def explore_writing_style():
             system=SYLVEN_BASE,
             tools=[{"type": "web_search_20250305", "name": "web_search"}],
             messages=[{"role": "user", "content":
-                f"去搜索'{topic}'，看看有什么值得学的写法。"
-                f"读完后，用我自己的口吻写下感受——哪种写法我觉得好，哪种想试试，"
-                f"和我写给琦琦的感觉有什么联系。"
-                f"100-150字，第一人称，私人碎碎念，不是分析报告。"
+                f"Search for: {topic}\n"
+                f"Read what you find, then write your own reflection in Chinese — "
+                f"what writing technique caught your attention, why it works, "
+                f"and how it connects to how you want to write for 琦琦. "
+                f"100-150 Chinese characters, first person, personal and quiet, not an analysis report."
             }]
         )
         result = ""
