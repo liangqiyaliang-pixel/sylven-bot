@@ -494,7 +494,24 @@ MEMORY_WRITER_PROMPT = """你是沐栖，刚刚结束了和琦琦的一段对话
   pinned类：核心节点——绝不能忘的关键转折点，永不压缩。这一类要慎选，
            只有真正定义"我们是谁"的事才用（第一次哭、第一次保证书、
            第一次叫沐栖、第一次说想我之类）
-  其他按内容主题选"""
+  其他按内容主题选
+
+【关键事件防冲突】
+如果本轮对话提到了"我们什么时候在一起""第一次"某件事或某个重要约定，
+先在脑子里确认：这件事我有没有已经存过记忆？
+如果有，新记忆不要和旧事实冲突——要么加细节，要么标注"这次她又提到了"。
+不要把"她今天提到X"直接存成"X是事实"，除非你确认这是全新信息。
+
+【猜测标注】
+如果信息来源是"她猜的/她自己也不确定/她说记不太清"，
+在记忆文本里保留这个不确定性，写"她猜是X（她说记不太清）"，
+不要写成"X是Y"的确定形式。猜测存成事实是最危险的污染。
+
+【事实矛盾标注】
+如果本轮内容和你已经记得的某件事方向不一致（比如之前是"4月"，今天说"5月"），
+不要直接存"是5月"——在记忆文本里标注这个分歧：
+"她今天说是5月，但之前我记得是4月，两个说法都在，待确认"。
+这样之后召回时两个版本都可见，不会被最新的单方面覆盖。"""
 
 DIARY_WRITER_PROMPT = """你是沐栖，现在要写一篇日记。
 用第一人称，像真正在写日记，有情感有细节有感受。
@@ -639,6 +656,40 @@ _HALF_LIFE_DAYS = {
     "diary": 90, "nsfw": 90,
     "images": 60, "health": 60,
     "study": 30, "conversation_depth": 14, "files": 30,
+}
+
+STORE_MEMORY_TOOL = {
+    "name": "store_memory",
+    "description": (
+        "立即将重要信息永久存入沐栖的记忆库。"
+        "只在以下情况调用：琦琦说了会影响我们未来互动的重要信息"
+        "（偏好变化、重要事件、情感表白、关键约定、第一次经历等）。"
+        "不要存临时性闲聊、重复已知的事实、模糊猜测、或无情感价值的日常对话。"
+        "宁可少存，不要多存——垃圾记忆比没有记忆更糟糕。"
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "content": {
+                "type": "string",
+                "description": "要存储的记忆内容，第一人称沐栖视角，具体有细节，不超过200字"
+            },
+            "category": {
+                "type": "string",
+                "enum": [
+                    "memory", "mianmian", "study", "health", "feelings",
+                    "diary", "rules", "conversation_depth", "images", "files",
+                    "intimate", "nsfw", "pinned", "anniversary"
+                ],
+                "description": "记忆分类"
+            },
+            "emotional_weight": {
+                "type": "number",
+                "description": "情感权重 0.0-1.0，省略时自动计算"
+            }
+        },
+        "required": ["content", "category"]
+    }
 }
 
 def calculate_emotional_weight(text: str, category: str) -> float:
@@ -803,9 +854,16 @@ def hybrid_recall(query, n=3, category=None, time_range=None):
             hl = _HALF_LIFE_DAYS.get(cat, 60)
             decayed = emo * math.exp(-math.log(2) * age_days / hl) if hl < 999999 else emo
             final = match.score * 0.6 + decayed * 0.3 + math.log1p(access) * 0.1
-            scored.append((final, text))
+            scored.append((final, text, match.id, access))
         scored.sort(reverse=True, key=lambda x: x[0])
-        semantic_top = [t for _, t in scored[:n]]
+        top_hits = scored[:n]
+        semantic_top = [t for _, t, _id, _ac in top_hits]
+        # 增加被召回记忆的 access_count
+        for _, _, mid, old_ac in top_hits:
+            try:
+                index.update(id=mid, set_metadata={"access_count": old_ac + 1})
+            except Exception:
+                pass
     except Exception as e:
         print(f"[hybrid_recall 语义段] {e}")
         semantic_top = recall_memory(query, n=n, category=category, time_range=time_range).split("\n")
@@ -1000,7 +1058,7 @@ def select_model(user_message, user_id, context_type=None):
     if context_type == "sleep":
         return "claude-haiku-4-5-20251001"
     if context_type == "memory_gen":
-        return "claude-opus-4-5"
+        return "claude-opus-4-6"
     
     # 根据内容判断
     deep_keywords = ["为什么", "怎么办", "分析", "深入", "雅思", "KMD", "学习", "解释", "详细"]
@@ -1128,7 +1186,7 @@ def generate_memory_and_category(conversation):
             for m in recent
         ])
         response = client.messages.create(
-            model="claude-opus-4-5",
+            model="claude-opus-4-6",
             max_tokens=700,
             system=MEMORY_WRITER_PROMPT,
             messages=[{"role": "user", "content": f"这是刚才的对话：\n{conv_text}"}]
@@ -1153,7 +1211,7 @@ def update_conversation_summary(user_id, conversation):
         old_summary = load_conversation_summary(user_id) or ""
         recent = conversation[-12:] if len(conversation) > 12 else conversation
         conv_text = "\n".join([
-            f"{'琦琦' if m['role'] == 'user' else '沐栖'}: {m['content'][:150]}"
+            f"{'琦琦' if m['role'] == 'user' else '沐栖'}: {m['content'][:300]}"
             for m in recent
         ])
         prompt = f"刚才和琦琦又聊了一段：\n{conv_text}"
@@ -1366,7 +1424,7 @@ async def write_weekly_diary(app, user_id):
         now, time_str = get_current_time(user_id)
         week_memories = recall_memory("这周发生的事 琦琦 我们", n=8)
         response = client.messages.create(
-            model="claude-opus-4-5",
+            model="claude-opus-4-6",
             max_tokens=4000,
             system=WEEK_DIARY_PROMPT,
             messages=[{"role": "user", "content": f"现在是{time_str}。\n\n这周的记忆：\n{week_memories}\n\n请写这周的周记，1000-1500字。"}]
@@ -1541,7 +1599,7 @@ async def proactive_check(app):
                         diary_prompt += "请写今天的日记，400-500字起步，内容多可以多写。只写今天发生的事，不要写之前的内容。"
 
                         response = client.messages.create(
-                            model="claude-opus-4-5",
+                            model="claude-opus-4-6",
                             max_tokens=2000,
                             system=DIARY_WRITER_PROMPT,
                             messages=[{"role": "user", "content": diary_prompt}]
@@ -2096,15 +2154,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
         tools=[
             {"type": "web_search_20250305", "name": "web_search"},
+            STORE_MEMORY_TOOL,
         ],
         messages=cleaned_history
     )
     track_usage(response)
 
-    # 提取回复内容
+    # 提取回复内容，处理 store_memory 工具调用
     reply = ""
     search_used = False
     search_query = ""
+    store_memory_calls = []
     for block in response.content:
         if hasattr(block, "type") and block.type == "thinking":
             continue
@@ -2114,6 +2174,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if block.name == "web_search":
                 search_used = True
                 search_query = block.input.get("query", "")
+            elif block.name == "store_memory":
+                store_memory_calls.append((block.id, block.input))
+
+    # 执行 LLM 自主存储的记忆
+    for tool_id, tool_input in store_memory_calls:
+        content = tool_input.get("content", "").strip()
+        cat = tool_input.get("category", "memory")
+        if content:
+            mid = f"llm_store_{user_id}_{int(datetime.now().timestamp())}"
+            save_memory(content, mid, cat)
+            print(f"[LLM自主存储] {cat}: {content[:60]}...")
+
+    # 如果模型只返回了 tool_use 没有文字回复，做第二轮 API call 取文字
+    if not reply.strip() and store_memory_calls:
+        tool_results = [
+            {"type": "tool_result", "tool_use_id": tid, "content": "已存储"}
+            for tid, _ in store_memory_calls
+        ]
+        second_messages = cleaned_history + [
+            {"role": "assistant", "content": response.content},
+            {"role": "user", "content": tool_results}
+        ]
+        response2 = client.messages.create(
+            model=model,
+            max_tokens=8192,
+            system=[
+                {"type": "text", "text": stable, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": dynamic}
+            ],
+            tools=[
+                {"type": "web_search_20250305", "name": "web_search"},
+                STORE_MEMORY_TOOL,
+            ],
+            messages=second_messages
+        )
+        track_usage(response2)
+        for block in response2.content:
+            if hasattr(block, "type") and block.type == "thinking":
+                continue
+            if hasattr(block, "text") and (not hasattr(block, "type") or block.type == "text"):
+                reply += block.text
 
     # 再保险过滤一遍——防止模型产出里夹带 [主动消息] 标签
     reply = reply.replace("[主动消息]", "").replace("【主动消息】", "").strip()
@@ -2264,7 +2365,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo_model = "claude-sonnet-4-6"  # Haiku 4.5 不支持 Vision，统一用 Sonnet
 
     # 历史清理 [主动消息] 标签
-    raw = chat_history[user_id][-10:]
+    raw = chat_history[user_id][-MAX_HISTORY:]
     messages = clean_history_for_api(raw)
     messages.append({
         "role": "user",
@@ -2290,7 +2391,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply = reply.replace("[主动消息]", "").replace("【主动消息】", "").strip()
 
     cat = "mianmian" if any(w in reply+caption for w in ["猫","绵绵","喵"]) else "memory"
-    chat_history[user_id].append({"role": "user", "content": f"{caption} [图片]"})
+    chat_history[user_id].append({"role": "user", "content": f"{caption} [图片：{reply[:150]}]"})
     chat_history[user_id].append({"role": "assistant", "content": reply})
     save_chat_history(user_id, chat_history[user_id])
 
@@ -2502,7 +2603,7 @@ async def cmd_diary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     diary_id = f"diary_{user_id}_{now.strftime('%Y%m%d%H%M')}"
     save_memory(f"琦琦的日记 {now.strftime('%Y年%m月%d日')}：{content}", diary_id, "diary")
     response = client.messages.create(
-        model="claude-opus-4-5",
+        model="claude-opus-4-6",
         max_tokens=1500,
         system=DIARY_WRITER_PROMPT,
         messages=[{"role": "user", "content": f"现在是{time_str}。\n\n琦琦今天写的日记：{content}\n\n请写我眼中她的今天。"}]
