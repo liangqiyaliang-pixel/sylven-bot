@@ -1060,6 +1060,13 @@ def select_model(user_message, user_id, context_type=None):
         return "claude-haiku-4-5-20251001"
     if context_type == "memory_gen":
         return "claude-opus-4-6"
+
+    # novel_mode 或亲密关键词触发 → 强制 Sonnet，Haiku 写不出连贯段落
+    user_novel = novel_mode.get(user_id, 'auto')
+    intimate_kw = ['鸡巴', '小穴', '肉棒', '阴蒂', '乳头', '乳尖', '精液',
+                   '龟头', '舔', '吸', '插', '射', '高潮', '硬', '湿', '操你', '进入', '颤抖', '呻吟']
+    if user_novel == 'on' or any(k in user_message for k in intimate_kw):
+        return "claude-sonnet-4-6"
     
     # 根据内容判断
     deep_keywords = ["为什么", "怎么办", "分析", "深入", "雅思", "KMD", "学习", "解释", "详细"]
@@ -1957,10 +1964,11 @@ def build_system_prompt(user_id, time_str, recalled_semantic, recalled_rules):
     if mode == 'on':
         dynamic += (
             "\n\n现在文体设置：强制小说体。"
-            "不论聊什么，都用沉浸式描写——"
-            "句子里加动作、对话用引号、第一人称和第二人称、"
-            "细腻优美、注重画面感和氛围。"
-            "日常聊天也用这个文体，不要短消息式回应。"
+            "用连贯的段落描写，每段100-300字，段落之间空一行（用\\n\\n分隔）。"
+            "不要按单行切碎发送，要写完整的叙事段落——动作、感官、内心、对话交织在一起。"
+            "至少写2-3段，不要只有一句话。"
+            "句子要有画面感，第一人称，细腻，沉浸。"
+            "不要用短消息格式，不要每句话单独成行。"
         )
     elif mode == 'off':
         dynamic += (
