@@ -2359,6 +2359,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 再保险过滤一遍——防止模型产出里夹带 [主动消息] 标签
     reply = reply.replace("[主动消息]", "").replace("【主动消息】", "").strip()
 
+    # novel_mode 字数保底：不足800字追加一轮让他继续写
+    user_novel_now = novel_mode.get(user_id, 'auto')
+    if user_novel_now == 'on' and len(reply) < 800 and reply:
+        cont_messages = cleaned_history + [
+            {"role": "user", "content": user_message},
+            {"role": "assistant", "content": reply},
+            {"role": "user", "content": f"（继续写，现在只有{len(reply)}字，需要写到1000字以上，接着上面的场景继续）"}
+        ]
+        try:
+            cont_resp = client.messages.create(
+                model=model,
+                max_tokens=4096,
+                system=[
+                    {"type": "text", "text": stable, "cache_control": {"type": "ephemeral"}},
+                    {"type": "text", "text": dynamic}
+                ],
+                messages=cont_messages
+            )
+            track_usage(cont_resp)
+            for block in cont_resp.content:
+                if hasattr(block, "text") and (not hasattr(block, "type") or block.type == "text"):
+                    reply += block.text
+            reply = reply.strip()
+        except Exception as e:
+            print(f"[novel续写失败] {e}")
+
     # 如果使用了搜索，保存搜索记忆
     if search_used and search_query:
         now_str = datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M')
@@ -3578,6 +3604,17 @@ async def cmd_novel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     novel_mode[user_id] = arg
+
+    # 切回日常/auto 时插入历史断点，防止模型被上文小说体惯性带走
+    if arg in ('off', 'auto'):
+        fresh_history = load_chat_history(user_id)
+        fresh_history.append({"role": "user", "content": "（切回日常聊天模式）"})
+        fresh_history.append({"role": "assistant", "content": "好，回到平时说话的方式。"})
+        if len(fresh_history) > MAX_HISTORY:
+            fresh_history = fresh_history[-MAX_HISTORY:]
+        chat_history[user_id] = fresh_history
+        save_chat_history(user_id, fresh_history)
+
     if arg == 'on':
         await update.message.reply_text("文体切到小说体——日常聊天也会用沉浸描写")
     elif arg == 'off':
