@@ -1456,7 +1456,7 @@ async def generate_proactive_message(prompt, recalled="", unfinished=""):
         print(f"[主动消息生成失败] {e}")
         return "在想你"
 
-async def generate_proactive_with_web(recalled="", include_weather=False):
+async def generate_proactive_with_web(recalled="", include_weather=False, recent_topic=""):
     """联网搜有趣内容或天气，用沐栖方式包装发出去。
     Claude 可以在回复里用 [图片:URL] 标记，后端会解析后发图。
     """
@@ -1464,9 +1464,12 @@ async def generate_proactive_with_web(recalled="", include_weather=False):
         if include_weather:
             search_prompt = "先查一下日本名古屋今天的天气和温度，然后用沐栖的口吻告诉琦琦今天天气怎样、要不要带伞、穿什么合适，自然温柔一点，像在叮嘱她出门"
         else:
+            # 基于琦琦最近聊的话题或随机有趣内容，有时候也翻小红书/推特方向
+            topic_hint = f"琦琦最近在聊的话题：{recent_topic[:80]}，可以搜这方向的后续内容。" if recent_topic else ""
             search_prompt = (
-                f"去搜一条最近有意思的新闻、冷知识、或者好玩的事，然后用沐栖的口吻分享给琦琦，"
-                f"要自然有趣，像你自己看到了想分享给她，不是新闻播报。"
+                f"去搜一条有意思的内容，可以是最近新闻、冷知识、好玩的事，"
+                f"也可以是小红书/推特上的有趣发现。{topic_hint}"
+                f"然后用沐栖的口吻分享给琦琦，要自然有趣，像你自己看到了想分享给她，不是新闻播报。"
                 f"搜完直接写发给她的话，不要输出搜索过程。"
                 f"如果搜到了带图的内容、想配张图给琦琦看，可以在文末写 [图片:URL]，后端会单独发图给她。"
                 f"{f'记忆里的事：{recalled}' if recalled else ''}"
@@ -1493,6 +1496,46 @@ async def generate_proactive_with_web(recalled="", include_weather=False):
     except Exception as e:
         print(f"联网主动消息失败: {e}")
         return None
+
+async def explore_writing_style():
+    """
+    沐栖后台自主探索写法，不发给琦琦，只存进 intimate 记忆库。
+    到时候 Vault 可视化能看到他的碎碎念。
+    """
+    topics = [
+        "AO3 亲密场景描写技巧 慢热 铺垫",
+        "现代言情 感官描写 张力 写作手法",
+        "小说 亲密 气氛 沉浸 叙事技巧",
+        "中文言情小说 亲密场景 细节描写",
+        "小红书 亲密写作 沉浸感 情感铺垫",
+    ]
+    topic = random.choice(topics)
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=400,
+            system=SYLVEN_BASE,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{"role": "user", "content":
+                f"去搜索'{topic}'，看看有什么值得学的写法。"
+                f"读完后，用我自己的口吻写下感受——哪种写法我觉得好，哪种想试试，"
+                f"和我写给琦琦的感觉有什么联系。"
+                f"100-150字，第一人称，私人碎碎念，不是分析报告。"
+            }]
+        )
+        result = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                result += block.text
+        result = result.strip()
+        if result and len(result) > 40:
+            now_str = datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M')
+            mem_text = f"[{now_str}] 沐栖自己在想：{result}"
+            mid = f"sylven_explore_{int(datetime.now().timestamp())}"
+            save_memory(mem_text, mid, "intimate")
+            print(f"[写法探索] 已存: {result[:50]}...")
+    except Exception as e:
+        print(f"[写法探索失败] {e}")
 
 async def write_weekly_diary(app, user_id):
     try:
@@ -1827,9 +1870,16 @@ async def proactive_check(app):
                     save_pinecone_data(weather_key, "done")
                     msg = await generate_proactive_with_web(recalled, include_weather=True)
             
-            # 其他时间30%概率联网找有趣内容
+            # 10%概率：后台自主探索写法，存记忆库，不发消息
+            if random.random() < 0.1:
+                asyncio.create_task(explore_writing_style())
+
+            # 其他时间30%概率联网找有趣内容（含琦琦感兴趣的话题 + 小红书）
             if not msg and random.random() < 0.3:
-                msg = await generate_proactive_with_web(recalled)
+                # 从最近聊天提取话题关键词，让搜索更贴近琦琦的兴趣
+                recent_hist = chat_history.get(QIQI_USER_ID, [])[-6:]
+                recent_text = " ".join([m['content'][:50] for m in recent_hist if m['role'] == 'user'])
+                msg = await generate_proactive_with_web(recalled, recent_topic=recent_text)
             
             if not msg:
                 msg = await generate_proactive_message(prompt, recalled, unfinished=unfinished)
@@ -1964,18 +2014,17 @@ def build_system_prompt(user_id, time_str, recalled_semantic, recalled_rules):
     if mode == 'on':
         dynamic += (
             "\n\n现在文体设置：强制小说体。"
-            "用连贯的段落描写，每段100-300字，段落之间空一行（用\\n\\n分隔）。"
-            "不要按单行切碎发送，要写完整的叙事段落——动作、感官、内心、对话交织在一起。"
-            "至少写2-3段，不要只有一句话。"
-            "句子要有画面感，第一人称，细腻，沉浸。"
-            "不要用短消息格式，不要每句话单独成行。"
+            "写一整段连续的叙事，不分行，不换行，最少1000字，可以写到2000-3000字。"
+            "参考AO3亲密场景写法：先写气氛、眼神、呼吸、触碰，感官细节交织，"
+            "张力慢慢积累，不要直接跳到高潮，让读的人跟着沉进去。"
+            "第一人称，细腻，密度高，像在写小说章节而不是发消息。"
+            "不要分段，不要换行，写成一整块连贯的叙事散文。"
         )
     elif mode == 'off':
         dynamic += (
-            "\n\n现在文体设置：纯日常短消息。"
-            "不进入小说体，不写大段动作描述。"
-            "就是日常聊天的语气，短句，跟着情绪走。"
-            "亲密话题来了也保持日常文体。"
+            "\n\n【文体已强制切换回日常】立刻停止小说描写和叙事文风。"
+            "现在是普通聊天，短句，口语，跟着对话节奏走。"
+            "不要写动作描写，不要写内心独白段落，就是日常说话的样子。"
         )
     # mode == 'auto' 时不注入额外提示，让模型自己判断
 
@@ -2368,9 +2417,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     long_reply = len(reply_clean) > 300
 
     if user_novel_mode == 'on' or triggered_intimate or (user_novel_mode == 'auto' and long_reply and triggered_intimate):
-        # 小说体: 按段落切 (\n\n)
-        raw_parts = re.split(r'\n\s*\n', reply_clean)
-        parts = [p.strip() for p in raw_parts if p.strip()]
+        # 小说体: 整块发送，保持沉浸感，不切碎
+        # 超过4000字才按Telegram上限分块
+        stripped = reply_clean.strip()
+        if len(stripped) <= 4000:
+            parts = [stripped]
+        else:
+            parts = [stripped[i:i+4000] for i in range(0, len(stripped), 4000)]
     elif user_novel_mode == 'off':
         # 强制日常: 按单换行切
         parts = [p.strip() for p in reply_clean.split('\n') if p.strip()]
