@@ -54,20 +54,16 @@ def main(dry_run: bool):
     print(f"模式: {'DRY RUN（不实际写入）' if dry_run else '正式迁移'}")
     print("─" * 50)
 
-    # Pinecone 不支持全量 fetch，用 list() 分批拿所有 ID
-    # 注意：list() 对 Serverless 有效，对 Pod-based 需要用别的方式
-    try:
-        all_ids = list(pc.Index(host=host).list(prefix=""))
-    except Exception:
-        # 有些版本 list() 返回 generator，需要展开
-        try:
-            all_ids = []
-            for batch in index.list(prefix=""):
-                all_ids.extend(batch)
-        except Exception as e:
-            print(f"❌  无法列出 ID：{e}")
-            print("    可能是 Pinecone Pod-based index，请手动 fetch 后迁移")
-            sys.exit(1)
+    # Pinecone v7: list() 返回 page 迭代器，每个 page 本身是字符串列表
+    all_ids = []
+    for page in index.list(prefix=""):
+        if isinstance(page, list):
+            all_ids.extend(str(x) for x in page)
+        elif isinstance(page, str):
+            all_ids.append(page)
+    if not all_ids:
+        print("❌  list() 未返回任何 ID，请检查 PINECONE_HOST 是否正确")
+        sys.exit(1)
 
     print(f"取到 {len(all_ids)} 个 ID")
 
