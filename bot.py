@@ -5,6 +5,7 @@ import base64
 import anthropic
 import asyncio
 import random
+import threading
 from datetime import datetime, timedelta, date, time as dtime
 from collections import Counter
 import pytz
@@ -3798,6 +3799,16 @@ def main():
     app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
     app.add_handler(MessageHandler(filters.ANIMATION, handle_gif))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # 启动 Vault API（Flask）在后台线程，Railway web 类型会分配 PORT
+    def _run_flask():
+        from web_api import app as flask_app
+        port = int(os.environ.get("PORT", 5001))
+        print(f"[web_api] Flask 启动在 :{port}")
+        flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
+    flask_thread = threading.Thread(target=_run_flask, daemon=True)
+    flask_thread.start()
 
     print("沐栖启动了，等琦琦...")
     app.run_polling()
