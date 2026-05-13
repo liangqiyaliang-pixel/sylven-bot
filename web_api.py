@@ -63,31 +63,58 @@ def health():
     return jsonify({"status": "ok"})
 
 
+@app.route("/debug")
+def debug():
+    """临时诊断：看 Pinecone 连通性和向量总数"""
+    try:
+        stats = index.describe_index_stats()
+        return jsonify({"total_vectors": stats.total_vector_count,
+                        "namespaces": str(stats.namespaces),
+                        "host": PINECONE_HOST[:30] + "..."})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/memories", methods=["GET"])
 @require_auth
 def list_memories():
     category = request.args.get("category", "all")
     limit    = min(int(request.args.get("limit", 50)), 200)
 
-    if category == "all":
-        cats = ALL_CATEGORIES
-    else:
-        cats = [category]
+    cats = ALL_CATEGORIES if category == "all" else [category]
 
-    def _query_cat(cat):
-        res = index.query(
-            vector=DUMMY_VEC,
-            top_k=limit,
-            include_metadata=True,
-            filter={"category": {"$eq": cat}},
-        )
+    def _fetch_cat(cat):
+        # 用 list() 按 ID 前缀拉取，不依赖向量相似度
+        ids = []
+        try:
+            for batch in index.list(prefix=f"{cat}_"):
+                ids.extend(batch)
+                if len(ids) >= limit:
+                    break
+        except Exception as e:
+            print(f"[web_api] list({cat}) 失败: {e}")
+            return []
+
+        ids = ids[:limit]
+        if not ids:
+            return []
+
+        try:
+            fetch_res = index.fetch(ids=ids)
+        except Exception as e:
+            print(f"[web_api] fetch({cat}) 失败: {e}")
+            return []
+
         rows = []
-        for m in res.matches:
-            meta = m.metadata or {}
-            if meta.get("type") in ("chat_history", "data", "migration_marker"):
+        for vid, vec in fetch_res.vectors.items():
+            meta = vec.metadata or {}
+            skip_types = ("chat_history", "data", "migration_marker")
+            if meta.get("type") in skip_types:
+                continue
+            if not meta.get("text"):
                 continue
             rows.append({
-                "id":           m.id,
+                "id":           vid,
                 "category":     meta.get("category", cat),
                 "text":         meta.get("text", ""),
                 "timestamp":    meta.get("timestamp", ""),
@@ -98,12 +125,12 @@ def list_memories():
 
     results = []
     with ThreadPoolExecutor(max_workers=7) as pool:
-        futures = {pool.submit(_query_cat, cat): cat for cat in cats}
+        futures = {pool.submit(_fetch_cat, cat): cat for cat in cats}
         for fut in as_completed(futures):
             try:
                 results.extend(fut.result())
             except Exception as e:
-                print(f"[web_api] list error cat={futures[fut]}: {e}")
+                print(f"[web_api] error: {e}")
 
     results.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
     return jsonify(results[:limit])
