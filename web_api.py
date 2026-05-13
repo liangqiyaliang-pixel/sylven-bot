@@ -55,7 +55,7 @@ ALL_CATEGORIES = [
 # ── routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
-def index():
+def homepage():
     return send_file(VAULT_HTML)
 
 @app.route("/health")
