@@ -34,7 +34,8 @@ def require_auth(f):
     return decorated
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-ZERO_VEC   = [0.0] * 1024
+_v = 1.0 / (1024 ** 0.5)
+DUMMY_VEC  = [_v] * 1024   # 归一化均匀向量，cosine相似度在Pinecone里有效
 VAULT_HTML = os.path.join(os.path.dirname(__file__), "web", "app", "index.html")
 
 def _embed(text: str) -> list[float]:
@@ -75,7 +76,7 @@ def list_memories():
 
     def _query_cat(cat):
         res = index.query(
-            vector=ZERO_VEC,
+            vector=DUMMY_VEC,
             top_k=limit,
             include_metadata=True,
             filter={"category": {"$eq": cat}},
@@ -127,7 +128,7 @@ def create_memory():
     try:
         vec = _embed(text)
     except Exception:
-        vec = ZERO_VEC
+        vec = DUMMY_VEC
 
     index.upsert(vectors=[{
         "id":     mem_id,
@@ -174,7 +175,7 @@ def update_memory(mem_id):
         if "text" in meta_update:
             vec = _embed(meta_update["text"])
         else:
-            vec = fetch_res.vectors[mem_id].values or ZERO_VEC
+            vec = fetch_res.vectors[mem_id].values or DUMMY_VEC
         index.upsert(vectors=[{"id": mem_id, "values": vec, "metadata": new_meta}])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
