@@ -4,6 +4,7 @@ Deployed alongside bot.py on Railway (separate process or gunicorn).
 """
 import os, json, time, uuid
 from functools import wraps
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from pinecone import Pinecone
@@ -40,7 +41,7 @@ def _embed(text: str) -> list[float]:
     res = pc.inference.embed(
         model="multilingual-e5-large",
         inputs=[text],
-        parameters={"input_type": "passage", "truncate": "END"},
+        parameters={"input_type": "passage"},
     )
     return res[0].values
 
@@ -72,29 +73,36 @@ def list_memories():
     else:
         cats = [category]
 
+    def _query_cat(cat):
+        res = index.query(
+            vector=ZERO_VEC,
+            top_k=limit,
+            include_metadata=True,
+            filter={"category": {"$eq": cat}},
+        )
+        rows = []
+        for m in res.matches:
+            meta = m.metadata or {}
+            if meta.get("type") in ("chat_history", "data", "migration_marker"):
+                continue
+            rows.append({
+                "id":           m.id,
+                "category":     meta.get("category", cat),
+                "text":         meta.get("text", ""),
+                "timestamp":    meta.get("timestamp", ""),
+                "emo_weight":   meta.get("emo_weight", 0.5),
+                "access_count": meta.get("access_count", 0),
+            })
+        return rows
+
     results = []
-    for cat in cats:
-        try:
-            res = index.query(
-                vector=ZERO_VEC,
-                top_k=limit,
-                include_metadata=True,
-                filter={"category": {"$eq": cat}},
-            )
-            for m in res.matches:
-                meta = m.metadata or {}
-                if meta.get("type") == "chat_history":
-                    continue
-                results.append({
-                    "id":         m.id,
-                    "category":   meta.get("category", cat),
-                    "text":       meta.get("text", ""),
-                    "timestamp":  meta.get("timestamp", ""),
-                    "emo_weight": meta.get("emo_weight", 0.5),
-                    "access_count": meta.get("access_count", 0),
-                })
-        except Exception as e:
-            print(f"[web_api] list error cat={cat}: {e}")
+    with ThreadPoolExecutor(max_workers=7) as pool:
+        futures = {pool.submit(_query_cat, cat): cat for cat in cats}
+        for fut in as_completed(futures):
+            try:
+                results.extend(fut.result())
+            except Exception as e:
+                print(f"[web_api] list error cat={futures[fut]}: {e}")
 
     results.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
     return jsonify(results[:limit])

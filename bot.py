@@ -3758,6 +3758,16 @@ async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"导出失败：{e}")
 
 def main():
+    # Flask 先起，让 Railway 健康检查立刻通过（必须在 init_memories 之前）
+    def _run_flask():
+        from web_api import app as flask_app
+        port = int(os.environ.get("PORT", 5001))
+        print(f"[web_api] Flask 启动在 :{port}")
+        flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
+    flask_thread = threading.Thread(target=_run_flask, daemon=True, name="vault-api")
+    flask_thread.start()
+
     init_memories()
 
     tz_saved = load_pinecone_data(f"timezone_{QIQI_USER_ID}")
@@ -3799,16 +3809,6 @@ def main():
     app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
     app.add_handler(MessageHandler(filters.ANIMATION, handle_gif))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # 启动 Vault API（Flask）在后台线程，Railway web 类型会分配 PORT
-    def _run_flask():
-        from web_api import app as flask_app
-        port = int(os.environ.get("PORT", 5001))
-        print(f"[web_api] Flask 启动在 :{port}")
-        flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
-
-    flask_thread = threading.Thread(target=_run_flask, daemon=True)
-    flask_thread.start()
 
     print("沐栖启动了，等琦琦...")
     app.run_polling()
