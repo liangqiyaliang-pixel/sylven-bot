@@ -616,6 +616,120 @@ ul { list-style: none; }
 
 /* ─── Utility ────────────────────────────────────────────── */
 .divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+
+/* ─── Brain tab interactive ──────────────────────────────── */
+.memory-card { cursor: pointer; transition: box-shadow var(--tr), transform var(--tr); }
+.memory-card:hover { box-shadow: var(--shadow-hov); transform: translateY(-1px); }
+
+.btn-add-mem {
+  margin-left: auto;
+  background: var(--sylven); color: #fff;
+  border-radius: 8px; padding: 6px 14px;
+  font-size: 0.82rem; font-family: inherit;
+  cursor: pointer; border: none;
+  transition: opacity var(--tr);
+}
+.btn-add-mem:hover { opacity: 0.88; }
+
+/* detail panel */
+.detail-header {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 16px;
+}
+.btn-back {
+  background: none; border: 1px solid var(--border);
+  border-radius: 8px; padding: 5px 12px;
+  font-size: 0.82rem; color: var(--text-muted);
+  cursor: pointer; font-family: inherit;
+  transition: border-color var(--tr), color var(--tr);
+}
+.btn-back:hover { border-color: var(--sylven); color: var(--sylven); }
+.detail-title {
+  font-family: 'ZCOOL XiaoWei', serif;
+  font-size: 1.05rem; color: var(--text);
+}
+.btn-add-inline {
+  margin-left: auto;
+  background: var(--sylven-soft); color: var(--sylven);
+  border: 1px solid rgba(217,116,79,0.3);
+  border-radius: 8px; padding: 5px 12px;
+  font-size: 0.82rem; cursor: pointer; font-family: inherit;
+}
+.btn-add-inline:hover { background: var(--sylven); color: #fff; }
+
+/* memory list items */
+.mem-item {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  position: relative;
+}
+.mem-item-meta {
+  font-size: 0.72rem; color: var(--text-muted);
+  margin-bottom: 6px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.mem-item-text {
+  font-size: 0.88rem; line-height: 1.75;
+  color: var(--text); white-space: pre-wrap;
+}
+.mem-item-actions {
+  display: flex; gap: 8px; margin-top: 10px;
+  justify-content: flex-end;
+}
+.btn-edit, .btn-del, .btn-cancel, .btn-save {
+  font-size: 0.78rem; padding: 4px 10px;
+  border-radius: 6px; cursor: pointer;
+  font-family: inherit; border: 1px solid var(--border);
+  background: none; color: var(--text-muted);
+  transition: all var(--tr);
+}
+.btn-edit:hover { border-color: var(--sylven); color: var(--sylven); }
+.btn-del:hover  { border-color: var(--error); color: var(--error); }
+.btn-save { background: var(--sylven); color: #fff; border-color: var(--sylven); }
+.btn-save:hover { opacity: 0.88; }
+.btn-cancel:hover { border-color: var(--text-muted); }
+
+.mem-textarea {
+  width: 100%; min-height: 90px;
+  font-family: 'Noto Serif SC', serif; font-size: 0.88rem;
+  line-height: 1.75; color: var(--text);
+  background: var(--bg); border: 1px solid var(--sylven);
+  border-radius: 8px; padding: 10px 12px;
+  resize: vertical; outline: none;
+  margin-top: 6px;
+}
+
+/* add modal */
+#add-modal { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(60,46,38,0.18); }
+.modal-card {
+  position: relative; z-index: 1;
+  width: min(520px, 92vw); padding: 24px;
+  border-radius: var(--r);
+}
+.modal-title {
+  font-family: 'ZCOOL XiaoWei', serif;
+  font-size: 1.05rem; margin-bottom: 12px;
+}
+.modal-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.modal-actions { display: flex; gap: 8px; margin-left: auto; }
+.cat-select {
+  font-family: inherit; font-size: 0.82rem;
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 10px; background: var(--bg);
+  color: var(--text); cursor: pointer; outline: none;
+  flex-shrink: 0;
+}
+.cat-select:focus { border-color: var(--sylven); }
+
+/* empty state */
+.detail-empty {
+  text-align: center; padding: 40px 20px;
+  color: var(--text-muted); font-size: 0.9rem;
+}
 </style>
 </head>
 
@@ -655,10 +769,12 @@ ul { list-style: none; }
   <section class="tab-panel active" id="tab-brain">
     <div class="section-header">
       <span class="section-title">沐栖大脑</span>
-      <span class="section-sub">14 类记忆 · 共 263 条</span>
+      <span class="section-sub" id="brain-count">加载中…</span>
+      <button class="btn-add-mem" id="btn-add-mem" onclick="showAddForm()" style="display:none">＋ 新建记忆</button>
     </div>
 
-    <div class="memory-grid">
+    <!-- category grid view -->
+    <div class="memory-grid" id="brain-grid">
 
       <div class="memory-card card is-pinned">
         <div class="mem-head">
@@ -801,6 +917,33 @@ ul { list-style: none; }
       </div>
 
     </div><!-- /memory-grid -->
+
+    <!-- category detail panel (hidden until card clicked) -->
+    <div id="brain-detail" style="display:none">
+      <div class="detail-header">
+        <button class="btn-back" onclick="hideCategoryDetail()">← 返回</button>
+        <span class="detail-title" id="detail-title"></span>
+        <button class="btn-sm btn-add-inline" onclick="showAddForm()">＋ 新建</button>
+      </div>
+      <div id="detail-list"></div>
+    </div>
+
+    <!-- add memory modal -->
+    <div id="add-modal" style="display:none">
+      <div class="modal-backdrop" onclick="hideAddForm()"></div>
+      <div class="modal-card card">
+        <div class="modal-title">新建记忆</div>
+        <textarea id="add-text" class="mem-textarea" placeholder="写下要记住的事…" rows="5"></textarea>
+        <div class="modal-row">
+          <select id="add-cat" class="cat-select"></select>
+          <div class="modal-actions">
+            <button class="btn-cancel" onclick="hideAddForm()">取消</button>
+            <button class="btn-save" onclick="submitAdd()">保存</button>
+          </div>
+        </div>
+        <div id="add-status" style="font-size:0.78rem;color:var(--text-muted);margin-top:6px"></div>
+      </div>
+    </div>
 
     <!-- Memory graph placeholder -->
     <div class="graph-section">
@@ -1394,23 +1537,30 @@ const CAT_META = {
 const CAT_ORDER = ['pinned','memory','feelings','rules','mianmian','study','health',
                    'diary','intimate','nsfw','images','files','conversation_depth','anniversary'];
 
+let allMemories = [];  // cache from last fetch
+let brainLoaded = false;
+let currentCat  = null;
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 function skeletonCard() {
   return `<div class="memory-card card" style="pointer-events:none">
     <div class="mem-head">
-      <span class="mem-emoji" style="opacity:.3">▓</span>
-      <span class="mem-name" style="background:var(--border);color:transparent;border-radius:4px;animation:pulse 1.2s infinite">████████</span>
-      <span class="mem-count" style="background:var(--border);color:transparent;border-radius:4px">██</span>
+      <span style="opacity:.3">▓</span>
+      <span style="background:var(--border);color:transparent;border-radius:4px;animation:pulse 1.2s infinite;padding:0 30px">　</span>
+      <span style="background:var(--border);color:transparent;border-radius:4px;padding:0 8px">　</span>
     </div>
     <p class="mem-preview" style="background:var(--border);color:transparent;border-radius:4px;animation:pulse 1.2s infinite;height:2.6em"></p>
-    <div class="mem-tag" style="opacity:.3">...</div>
+    <div class="mem-tag" style="opacity:.3">…</div>
   </div>`;
 }
 
-let brainLoaded = false;
-async function loadBrainTab() {
-  if (brainLoaded) return;
-  const grid = document.querySelector('#tab-brain .memory-grid');
+async function loadBrainTab(force = false) {
+  if (brainLoaded && !force) return;
+  const grid = document.getElementById('brain-grid');
   grid.innerHTML = CAT_ORDER.map(() => skeletonCard()).join('');
+  document.getElementById('btn-add-mem').style.display = 'none';
 
   let items;
   try {
@@ -1420,7 +1570,7 @@ async function loadBrainTab() {
     return;
   }
 
-  // group by category
+  allMemories = items;
   const bycat = {};
   for (const it of items) {
     const c = it.category || 'memory';
@@ -1428,16 +1578,16 @@ async function loadBrainTab() {
     bycat[c].push(it);
   }
 
-  const totalCount = items.length;
-  document.querySelector('#tab-brain .section-sub').textContent =
-    `14 类记忆 · 共 ${totalCount} 条`;
+  document.getElementById('brain-count').textContent = `14 类记忆 · 共 ${items.length} 条`;
+  document.getElementById('btn-add-mem').style.display = '';
 
   grid.innerHTML = CAT_ORDER.map(cat => {
     const entries = bycat[cat] || [];
     const m = CAT_META[cat] || { emoji:'📦', name:cat, cls:'', countCls:'' };
-    const preview = entries[0] ? entries[0].text.slice(0, 60) + (entries[0].text.length > 60 ? '…' : '')
-                               : '暂无记录';
-    return `<div class="memory-card card ${m.cls}" data-cat="${cat}">
+    const preview = entries[0]
+      ? entries[0].text.slice(0, 60) + (entries[0].text.length > 60 ? '…' : '')
+      : '暂无记录';
+    return `<div class="memory-card card ${m.cls}" data-cat="${cat}" onclick="showCategoryDetail('${cat}')">
       <div class="mem-head">
         <span class="mem-emoji">${m.emoji}</span>
         <span class="mem-name">${m.name}</span>
@@ -1451,8 +1601,133 @@ async function loadBrainTab() {
   brainLoaded = true;
 }
 
-function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+/* ── Category detail view ────────────────────── */
+function showCategoryDetail(cat) {
+  currentCat = cat;
+  const m = CAT_META[cat] || { emoji:'📦', name:cat };
+  document.getElementById('detail-title').textContent = `${m.emoji}  ${m.name}`;
+  document.getElementById('brain-grid').style.display = 'none';
+  document.getElementById('brain-detail').style.display = 'block';
+  renderDetailList();
+}
+
+function hideCategoryDetail() {
+  currentCat = null;
+  document.getElementById('brain-detail').style.display = 'none';
+  document.getElementById('brain-grid').style.display = '';
+}
+
+function renderDetailList() {
+  const items = allMemories.filter(m => m.category === currentCat)
+    .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+  const el = document.getElementById('detail-list');
+  if (!items.length) {
+    el.innerHTML = `<div class="detail-empty">这里还没有记忆，点"＋ 新建"添加一条</div>`;
+    return;
+  }
+  el.innerHTML = items.map(it => memItemHtml(it)).join('');
+}
+
+function memItemHtml(it) {
+  const ts = it.timestamp ? it.timestamp.slice(0, 10) : '';
+  const emo = it.emo_weight ? `情感权重 ${Number(it.emo_weight).toFixed(2)}` : '';
+  return `<div class="mem-item" id="item-${it.id}">
+    <div class="mem-item-meta">${ts}${emo ? '　·　' + emo : ''}</div>
+    <div class="mem-item-text" id="text-${it.id}">${escHtml(it.text)}</div>
+    <div class="mem-item-actions">
+      <button class="btn-edit" onclick="startEdit('${it.id}')">编辑</button>
+      <button class="btn-del"  onclick="deleteMem('${it.id}')">删除</button>
+    </div>
+  </div>`;
+}
+
+function startEdit(id) {
+  const item = allMemories.find(m => m.id === id);
+  if (!item) return;
+  const textEl = document.getElementById(`text-${id}`);
+  const actions = textEl.nextElementSibling;
+  textEl.innerHTML = `<textarea class="mem-textarea" id="edit-ta-${id}">${escHtml(item.text)}</textarea>`;
+  actions.innerHTML = `
+    <button class="btn-cancel" onclick="cancelEdit('${id}')">取消</button>
+    <button class="btn-save"   onclick="saveEdit('${id}')">保存</button>`;
+}
+
+function cancelEdit(id) {
+  const item = allMemories.find(m => m.id === id);
+  if (!item) return;
+  const itemEl = document.getElementById(`item-${id}`);
+  itemEl.outerHTML = memItemHtml(item);
+}
+
+async function saveEdit(id) {
+  const ta = document.getElementById(`edit-ta-${id}`);
+  const newText = ta.value.trim();
+  if (!newText) return;
+  ta.disabled = true;
+  try {
+    await api(`/memories/${id}`, { method:'PUT', body: JSON.stringify({ text: newText }) });
+    const item = allMemories.find(m => m.id === id);
+    if (item) item.text = newText;
+    const itemEl = document.getElementById(`item-${id}`);
+    itemEl.outerHTML = memItemHtml({ ...item, text: newText });
+  } catch(e) {
+    ta.disabled = false;
+    alert('保存失败：' + e.message);
+  }
+}
+
+async function deleteMem(id) {
+  if (!confirm('删除这条记忆？删了就没了哦')) return;
+  try {
+    await api(`/memories/${id}`, { method:'DELETE' });
+    allMemories = allMemories.filter(m => m.id !== id);
+    document.getElementById(`item-${id}`)?.remove();
+    // update count
+    const cnt = allMemories.filter(m => m.category === currentCat).length;
+    document.getElementById('brain-count').textContent =
+      `14 类记忆 · 共 ${allMemories.length} 条`;
+    if (!cnt) renderDetailList();
+  } catch(e) {
+    alert('删除失败：' + e.message);
+  }
+}
+
+/* ── Add memory modal ────────────────────────── */
+function showAddForm() {
+  const sel = document.getElementById('add-cat');
+  sel.innerHTML = CAT_ORDER.map(c =>
+    `<option value="${c}" ${c === (currentCat || 'memory') ? 'selected' : ''}>${CAT_META[c]?.name || c}</option>`
+  ).join('');
+  document.getElementById('add-text').value = '';
+  document.getElementById('add-status').textContent = '';
+  document.getElementById('add-modal').style.display = 'flex';
+  document.getElementById('add-text').focus();
+}
+function hideAddForm() {
+  document.getElementById('add-modal').style.display = 'none';
+}
+async function submitAdd() {
+  const text = document.getElementById('add-text').value.trim();
+  const cat  = document.getElementById('add-cat').value;
+  const status = document.getElementById('add-status');
+  if (!text) { status.textContent = '内容不能为空'; return; }
+  status.textContent = '保存中…';
+  try {
+    const newMem = await api('/memories', {
+      method: 'POST',
+      body: JSON.stringify({ text, category: cat }),
+    });
+    allMemories.push(newMem);
+    document.getElementById('brain-count').textContent =
+      `14 类记忆 · 共 ${allMemories.length} 条`;
+    hideAddForm();
+    if (currentCat === cat) renderDetailList();
+    // refresh grid counts
+    brainLoaded = false;
+    loadBrainTab(true);
+  } catch(e) {
+    status.textContent = '保存失败：' + e.message;
+  }
 }
 
 /* ── 心里话 — 实时拉取 ─────────────────────── */
