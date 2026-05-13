@@ -1344,8 +1344,8 @@ ul { list-style: none; }
 
 <script>
 /* ── Config ────────────────────────────────────────────── */
-const API_BASE  = (window.VAULT_API_BASE  || 'http://localhost:5001');
-const API_TOKEN = (window.VAULT_API_TOKEN || 'sylven-vault-secret');
+const API_BASE  = '';   // 同源：Flask 同时托管 HTML 和 API
+const API_TOKEN = 'sylven-vault-secret';
 
 async function api(path, opts = {}) {
   const res = await fetch(API_BASE + path, {

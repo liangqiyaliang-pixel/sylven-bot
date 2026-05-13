@@ -4,7 +4,7 @@ Deployed alongside bot.py on Railway (separate process or gunicorn).
 """
 import os, json, time, uuid
 from functools import wraps
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from pinecone import Pinecone
 import anthropic
@@ -33,7 +33,8 @@ def require_auth(f):
     return decorated
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-ZERO_VEC = [0.0] * 1024
+ZERO_VEC   = [0.0] * 1024
+VAULT_HTML = os.path.join(os.path.dirname(__file__), "web", "app", "index.html")
 
 def _embed(text: str) -> list[float]:
     res = pc.inference.embed(
@@ -50,6 +51,10 @@ ALL_CATEGORIES = [
 ]
 
 # ── routes ────────────────────────────────────────────────────────────────────
+
+@app.route("/")
+def index():
+    return send_file(VAULT_HTML)
 
 @app.route("/health")
 def health():
