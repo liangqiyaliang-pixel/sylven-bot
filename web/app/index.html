@@ -1564,7 +1564,7 @@ async function loadBrainTab(force = false) {
 
   let items;
   try {
-    items = await api('/memories?category=all&limit=200');
+    items = await api('/memories?category=all&limit=2000');
   } catch(e) {
     grid.innerHTML = `<p style="color:var(--error);padding:20px">连接失败：${e.message}</p>`;
     return;

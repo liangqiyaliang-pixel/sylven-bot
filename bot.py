@@ -1097,20 +1097,8 @@ def select_model(user_message, user_id, context_type=None):
     
     message_lower = user_message.lower()
     
-    # 简单对话用Haiku
-    if any(k in message_lower for k in simple_keywords) and len(user_message) < 20:
-        return "claude-haiku-4-5-20251001"
-    
-    # 深入话题用Sonnet
-    if any(k in message_lower for k in deep_keywords):
-        return "claude-sonnet-4-6"
-    
-    # 长消息用Sonnet
-    if len(user_message) > 100:
-        return "claude-sonnet-4-6"
-    
-    # 默认用Haiku（省钱）
-    return "claude-haiku-4-5-20251001"
+    # 默认Sonnet，深入话题同样Sonnet
+    return "claude-sonnet-4-6"
 
 def get_asked_questions(user_id, days=7):
     """获取最近N天主动消息里问过的问题，防止重复提问"""

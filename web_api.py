@@ -88,7 +88,7 @@ def debug():
 @require_auth
 def list_memories():
     category = request.args.get("category", "all")
-    limit    = min(int(request.args.get("limit", 50)), 200)
+    limit    = min(int(request.args.get("limit", 500)), 2000)
 
     cats = ALL_CATEGORIES if category == "all" else [category]
 
