@@ -65,12 +65,22 @@ def health():
 
 @app.route("/debug")
 def debug():
-    """临时诊断：看 Pinecone 连通性和向量总数"""
     try:
         stats = index.describe_index_stats()
-        return jsonify({"total_vectors": stats.total_vector_count,
-                        "namespaces": str(stats.namespaces),
-                        "host": PINECONE_HOST[:30] + "..."})
+        # 测试 list() 能不能拿到 ID
+        sample_ids = []
+        try:
+            for batch in index.list(prefix="memory_", limit=5):
+                sample_ids.extend(batch)
+                break
+        except Exception as le:
+            sample_ids = [f"list()报错: {le}"]
+        # 测试 fetch 一个 KV 条目确认连接
+        return jsonify({
+            "total_vectors": stats.total_vector_count,
+            "namespaces": str(stats.namespaces),
+            "list_sample": sample_ids,
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
