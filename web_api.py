@@ -4,7 +4,6 @@ Deployed alongside bot.py on Railway (separate process or gunicorn).
 """
 import os, json, time, uuid
 from functools import wraps
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from pinecone import Pinecone
@@ -137,19 +136,14 @@ def list_memories():
         return rows
 
     results = []
-    with ThreadPoolExecutor(max_workers=7) as pool:
-        futures = {pool.submit(_fetch_cat, cat): cat for cat in cats}
-        for fut in as_completed(futures):
-            try:
-                results.extend(fut.result())
-            except Exception as e:
-                print(f"[web_api] error: {e}")
+    for cat in cats:
+        try:
+            results.extend(_fetch_cat(cat))
+        except Exception as e:
+            print(f"[web_api] error cat={cat}: {e}")
 
     results.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-    try:
-        return jsonify(results[:limit])
-    except Exception as e:
-        return jsonify({"error": f"序列化失败: {e}", "count": len(results)}), 500
+    return jsonify(results[:limit])
 
 
 @app.route("/memories", methods=["POST"])
