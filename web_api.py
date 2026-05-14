@@ -70,8 +70,8 @@ def debug():
         # 测试 list() 能不能拿到 ID
         sample_ids = []
         try:
-            for batch in index.list(prefix="memory_", limit=5):
-                sample_ids.extend(batch)
+            for batch in index.list(prefix="memory_"):
+                sample_ids.extend([x.id if hasattr(x, 'id') else str(x) for x in batch])
                 break
         except Exception as le:
             sample_ids = [f"list()报错: {le}"]
@@ -98,7 +98,7 @@ def list_memories():
         ids = []
         try:
             for batch in index.list(prefix=f"{cat}_"):
-                ids.extend(batch)
+                ids.extend([x.id if hasattr(x, 'id') else str(x) for x in batch])
                 if len(ids) >= limit:
                     break
         except Exception as e:
