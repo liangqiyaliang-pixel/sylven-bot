@@ -117,20 +117,23 @@ def list_memories():
 
         rows = []
         for vid, vec in fetch_res.vectors.items():
-            meta = vec.metadata or {}
-            skip_types = ("chat_history", "data", "migration_marker")
-            if meta.get("type") in skip_types:
-                continue
-            if not meta.get("text"):
-                continue
-            rows.append({
-                "id":           vid,
-                "category":     meta.get("category", cat),
-                "text":         meta.get("text", ""),
-                "timestamp":    meta.get("timestamp", ""),
-                "emo_weight":   meta.get("emo_weight", 0.5),
-                "access_count": meta.get("access_count", 0),
-            })
+            try:
+                meta = vec.metadata or {}
+                skip_types = ("chat_history", "data", "migration_marker")
+                if meta.get("type") in skip_types:
+                    continue
+                if not meta.get("text"):
+                    continue
+                rows.append({
+                    "id":           str(vid),
+                    "category":     str(meta.get("category", cat)),
+                    "text":         str(meta.get("text", "")),
+                    "timestamp":    str(meta.get("timestamp", "")),
+                    "emo_weight":   float(meta.get("emo_weight", 0.5)),
+                    "access_count": int(meta.get("access_count", 0)),
+                })
+            except Exception as e:
+                print(f"[web_api] row parse error {vid}: {e}")
         return rows
 
     results = []
@@ -143,7 +146,10 @@ def list_memories():
                 print(f"[web_api] error: {e}")
 
     results.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-    return jsonify(results[:limit])
+    try:
+        return jsonify(results[:limit])
+    except Exception as e:
+        return jsonify({"error": f"序列化失败: {e}", "count": len(results)}), 500
 
 
 @app.route("/memories", methods=["POST"])
