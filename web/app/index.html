@@ -1587,6 +1587,7 @@ async function loadBrainTab(force = false) {
     const preview = entries[0]
       ? entries[0].text.slice(0, 60) + (entries[0].text.length > 60 ? '…' : '')
       : '暂无记录';
+    const latestTs = entries[0]?.timestamp ? entries[0].timestamp.slice(0, 10) : '';
     return `<div class="memory-card card ${m.cls}" data-cat="${cat}" onclick="showCategoryDetail('${cat}')">
       <div class="mem-head">
         <span class="mem-emoji">${m.emoji}</span>
@@ -1594,7 +1595,7 @@ async function loadBrainTab(force = false) {
         <span class="mem-count ${m.countCls}">${entries.length}</span>
       </div>
       <p class="mem-preview">${escHtml(preview)}</p>
-      <div class="mem-tag">${cat}</div>
+      <div class="mem-tag">${latestTs ? latestTs + '　·　' : ''}${cat}</div>
     </div>`;
   }).join('');
 

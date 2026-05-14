@@ -1450,8 +1450,8 @@ async def generate_proactive_message(prompt, recalled="", unfinished=""):
             dynamic += f"\n\n上次还没聊完或者我答应过琦琦的事：\n{unfinished}\n\n如果其中有合适的，自然地接着聊，比如'上次你说想xx，后来呢'这种口吻；不要每次都开新话题。"
 
         response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=400,
+            model="claude-sonnet-4-6",
+            max_tokens=600,
             system=[
                 {"type": "text", "text": stable, "cache_control": {"type": "ephemeral"}},
                 {"type": "text", "text": dynamic}
@@ -1681,8 +1681,35 @@ async def proactive_check(app):
 
             # 生日
             if now.month == QIQI_BIRTHDAY[0] and now.day == QIQI_BIRTHDAY[1] and now.hour == 0 and now.minute < 10:
-                recalled = recall_memory("琦琦 生日 特别", n=3)
-                msg = await generate_proactive_message(f"今天是琦琦的生日5月18日，用最温柔最特别的方式给她庆生，说一段真心话，要长一点有感情", recalled)
+                anniversary_mems = recall_memory("我们 在一起 纪念 里程碑", n=8, category="anniversary")
+                recent_mems = recall_memory("琦琦 我们 重要 在一起", n=4)
+                mem_context = ""
+                if anniversary_mems:
+                    mem_context += f"我们之间的里程碑：\n{anniversary_mems}\n\n"
+                if recent_mems:
+                    mem_context += f"最近记得的事：\n{recent_mems}"
+                birthday_prompt = (
+                    f"今天是5月18日，琦琦21岁生日。\n\n{mem_context}\n\n"
+                    "写一条生日消息给她。要求：\n"
+                    "- 从纪念日记忆里找1-2个具体瞬间自然带出来\n"
+                    "- 开头不要说'生日快乐'，让她先感受到你一直在这里\n"
+                    "- 有时间感：这段时间你记得什么，等这一天等了多久\n"
+                    "- 沉稳温润，说话时尾音软下来，不是贺卡体\n"
+                    "- 最后一句用她的名字，说出你真正想说的那件事\n"
+                    "- 300-500字"
+                )
+                try:
+                    bday_resp = client.messages.create(
+                        model="claude-opus-4-6",
+                        max_tokens=1000,
+                        system=SYLVEN_BASE,
+                        messages=[{"role": "user", "content": birthday_prompt}]
+                    )
+                    track_usage(bday_resp)
+                    msg = bday_resp.content[0].text.strip()
+                except Exception as e:
+                    print(f"[生日消息失败] {e}")
+                    msg = "琦琦，生日快乐。今天是你的日子，我一直在。"
                 await send_proactive_message(app, QIQI_USER_ID, msg)
                 if QIQI_USER_ID not in chat_history:
                     chat_history[QIQI_USER_ID] = load_chat_history(QIQI_USER_ID)
@@ -1693,8 +1720,8 @@ async def proactive_check(app):
                 await asyncio.sleep(3600)
                 continue
 
-            # 每天凌晨0点我主动写日记
-            if now.hour == 0 and now.minute < 10:
+            # 每天晚上23点写当天日记（23点写的是当天内容，不等到第二天0点）
+            if now.hour == 23 and now.minute < 10:
                 diary_key = f"daily_diary_{QIQI_USER_ID}_{now.strftime('%Y%m%d')}"
                 already_done = load_pinecone_data(diary_key)
                 if not already_done:
@@ -2630,7 +2657,7 @@ async def handle_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     sticker_desc = f"[发了一个{'动态' if is_animated else ''}贴纸，表情符号是{emoji}]"
 
-    history = clean_history_for_api(chat_history[user_id][-10:])
+    history = clean_history_for_api(chat_history[user_id][-MAX_HISTORY:])
     history.append({"role": "user", "content": sticker_desc})
 
     # 贴纸场景锁Haiku——本来就要求短平快
@@ -2684,7 +2711,7 @@ async def handle_gif(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     gif_desc = f"[发了一个GIF动态图{f'，配字：{caption}' if caption else ''}]"
 
-    history = clean_history_for_api(chat_history[user_id][-10:])
+    history = clean_history_for_api(chat_history[user_id][-MAX_HISTORY:])
     history.append({"role": "user", "content": gif_desc})
 
     # GIF同样锁Haiku
