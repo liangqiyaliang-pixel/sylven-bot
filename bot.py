@@ -1683,6 +1683,30 @@ PROACTIVE_RULES = [
     {"name": "深夜警告", "h_start": 1,  "h_end": 7,  "silence_h": 0,   "prob": 0.95, "daily": False, "require_phone": True},
 ]
 _rule_last_fired = {}   # {rule_key: timestamp}  每条规则独立冷却
+_phone_cache: list = []     # 从 web_api /phone-activity 拉取的最新数据
+_phone_cache_ts: float = 0.0
+VAULT_URL    = os.environ.get("VAULT_URL", "https://sylven-bot-production.up.railway.app")
+VAULT_SECRET = os.environ.get("VAULT_API_SECRET", "sylven-vault-secret")
+
+async def _refresh_phone_cache():
+    """每60秒从 web_api 拉一次手机活动记录，存到内存缓存"""
+    global _phone_cache, _phone_cache_ts
+    now_ts = datetime.now().timestamp()
+    if now_ts - _phone_cache_ts < 60:
+        return
+    try:
+        import aiohttp
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(
+                f"{VAULT_URL}/phone-activity",
+                headers={"Authorization": f"Bearer {VAULT_SECRET}"}
+            ) as resp:
+                if resp.status == 200:
+                    _phone_cache = await resp.json()
+                    _phone_cache_ts = now_ts
+    except Exception as e:
+        print(f"[phone_cache] 拉取失败: {e}")
 
 def _get_phone_silence_minutes(user_id):
     """两源沉默时间：取 TG最后消息 和 手机最后活跃 的最近值"""
@@ -1691,41 +1715,26 @@ def _get_phone_silence_minutes(user_id):
     last_tg = last_message_time.get(user_id, 0)
     if last_tg:
         candidates.append(last_tg)
-    try:
-        import web_api as _wa
-        with _wa._phone_lock:
-            for entry in reversed(_wa._phone_activity):
-                if entry.get("app") != "锁屏":
-                    candidates.append(entry["ts"])
-                    break
-    except Exception:
-        pass
+    for entry in reversed(_phone_cache):
+        if entry.get("app") != "锁屏":
+            candidates.append(entry["ts"])
+            break
     if not candidates:
         return 9999
     return (now_ts - max(candidates)) / 60
 
 def _get_last_phone_app():
     """返回最近使用的 app 名（用于 context hint）"""
-    try:
-        import web_api as _wa
-        with _wa._phone_lock:
-            if _wa._phone_activity:
-                return _wa._phone_activity[-1].get("app", "")
-    except Exception:
-        pass
+    if _phone_cache:
+        return _phone_cache[-1].get("app", "")
     return ""
 
 def _is_phone_active(within_minutes=30):
     """检查最近 N 分钟内手机是否活跃（任意 app 上报）"""
     now_ts = datetime.now().timestamp()
-    try:
-        import web_api as _wa
-        with _wa._phone_lock:
-            for entry in reversed(_wa._phone_activity):
-                if (now_ts - entry["ts"]) < within_minutes * 60:
-                    return True
-    except Exception:
-        pass
+    for entry in reversed(_phone_cache):
+        if (now_ts - entry["ts"]) < within_minutes * 60:
+            return True
     return False
 
 def _pick_proactive_rule(now, user_id):
@@ -1918,6 +1927,7 @@ async def proactive_check(app):
                 continue
 
             # ── 六条规则主动消息引擎 ──────────────────────────────
+            await _refresh_phone_cache()
             fired_rule = _pick_proactive_rule(now, QIQI_USER_ID)
             if not fired_rule:
                 continue
