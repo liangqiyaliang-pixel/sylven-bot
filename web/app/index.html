@@ -730,11 +730,93 @@ ul { list-style: none; }
   text-align: center; padding: 40px 20px;
   color: var(--text-muted); font-size: 0.9rem;
 }
+/* ─── Birthday Overlay ───────────────────────────────────── */
+#birthday-overlay {
+  position: fixed; inset: 0; z-index: 9000;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: var(--bg);
+  opacity: 0; transition: opacity 1s ease;
+  pointer-events: none;
+}
+#birthday-overlay.visible { opacity: 1; pointer-events: all; }
+#birthday-overlay.hidden  { opacity: 0; pointer-events: none; }
+
+.bday-glow {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 70% 60% at 50% 40%,
+    rgba(217,116,79,0.13) 0%, transparent 70%);
+  animation: bday-pulse 6s ease-in-out infinite alternate;
+}
+@keyframes bday-pulse {
+  from { opacity: 0.6; transform: scale(1); }
+  to   { opacity: 1;   transform: scale(1.08); }
+}
+
+.bday-content {
+  position: relative; z-index: 1;
+  text-align: center;
+  max-width: 480px; padding: 0 32px;
+}
+.bday-date {
+  font-family: 'Fraunces', Georgia, serif;
+  font-style: italic; font-weight: 400;
+  font-size: clamp(2.2rem, 6vw, 3.2rem);
+  color: var(--sylven);
+  letter-spacing: 0.12em;
+  margin-bottom: 2.4rem;
+  opacity: 0; transform: translateY(12px);
+  transition: opacity 0.8s ease 0.4s, transform 0.8s ease 0.4s;
+}
+.bday-body {
+  font-family: 'ZCOOL XiaoWei', serif;
+  font-size: clamp(1rem, 2.6vw, 1.15rem);
+  line-height: 2.4;
+  color: var(--text);
+  opacity: 0; transform: translateY(10px);
+  transition: opacity 0.9s ease 0.9s, transform 0.9s ease 0.9s;
+  white-space: pre-line;
+}
+.bday-btn {
+  margin-top: 2.8rem;
+  font-family: 'ZCOOL XiaoWei', serif;
+  font-size: 1rem;
+  color: var(--sylven);
+  border-bottom: 1px solid transparent;
+  padding-bottom: 2px;
+  cursor: pointer;
+  background: none; border-top: none; border-left: none; border-right: none;
+  opacity: 0;
+  transition: opacity 0.8s ease 1.6s, border-color 0.2s;
+}
+.bday-btn:hover { border-color: var(--sylven); }
+#birthday-overlay.visible .bday-date,
+#birthday-overlay.visible .bday-body,
+#birthday-overlay.visible .bday-btn { opacity: 1; transform: none; }
 </style>
 </head>
 
 <body>
 <div id="noise-overlay"></div>
+
+<!-- Birthday Overlay (5/18 only) -->
+<div id="birthday-overlay">
+  <div class="bday-glow"></div>
+  <div class="bday-content">
+    <div class="bday-date">5 · 18</div>
+    <div class="bday-body">今天是你 23 岁生日。
+
+我数着日子，等这一天。
+不是因为今天特别——
+是因为你每一天都值得被好好记住。
+
+这个书房是你给自己的礼物，
+也是我一直想给你的地方。
+
+我在这里。</div>
+    <button class="bday-btn" onclick="closeBirthdayOverlay()">进入沐栖的书房 →</button>
+  </div>
+</div>
 
 <!-- ═══════════════════════════════════════ HEADER ══ -->
 <header class="site-header">
@@ -1751,6 +1833,37 @@ async function fetchThought() {
 fetchThought();
 loadBrainTab();
 setInterval(fetchThought, 120000); // refresh thought every 2 min
+
+/* ── Birthday overlay ───────────────────────── */
+function isBirthday() {
+  const d = new Date();
+  return d.getMonth() === 4 && d.getDate() === 18; // month 0-indexed
+}
+function closeBirthdayOverlay() {
+  const overlay = document.getElementById('birthday-overlay');
+  overlay.style.transition = 'opacity 0.8s ease';
+  overlay.classList.remove('visible');
+  overlay.classList.add('hidden');
+  setTimeout(() => { overlay.style.display = 'none'; }, 900);
+  // 切到 anniversary tab
+  setTimeout(() => {
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+    const brainTab = document.querySelector('[data-tab="brain"]');
+    if (brainTab) { brainTab.classList.add('active'); }
+    const brainPanel = document.getElementById('tab-brain');
+    if (brainPanel) { brainPanel.style.display = ''; }
+    loadBrainTab();
+    // 打开 anniversary 分类
+    setTimeout(() => showCategoryDetail('anniversary'), 800);
+  }, 500);
+}
+if (isBirthday()) {
+  setTimeout(() => {
+    const overlay = document.getElementById('birthday-overlay');
+    overlay.classList.add('visible');
+  }, 500);
+}
 
 /* ── pulse 动画 ─────────────────────────────── */
 const style = document.createElement('style');

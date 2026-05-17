@@ -2,12 +2,16 @@
 Sylven Vault API — Flask proxy between the Vault frontend and Pinecone.
 Deployed alongside bot.py on Railway (separate process or gunicorn).
 """
-import os, json, time, uuid
+import os, json, time, uuid, threading
 from functools import wraps
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from pinecone import Pinecone
 import anthropic
+
+# ── 手机活动（Stochastic Pulse）───────────────────────────────
+_phone_activity = []          # [{"app": str, "time": str, "ts": float}]
+_phone_lock     = threading.Lock()
 
 app = Flask(__name__)
 CORS(app)
@@ -278,6 +282,27 @@ def thought():
 @require_auth
 def categories():
     return jsonify(ALL_CATEGORIES)
+
+
+@app.route("/phone-activity", methods=["POST"])
+@require_auth
+def report_phone_activity():
+    body     = request.get_json(force=True) or {}
+    app_name = str(body.get("app_name", "unknown")).strip()
+    ts_epoch = time.time()
+    ts_str   = time.strftime("%Y-%m-%dT%H:%M:%S+09:00", time.localtime(ts_epoch))
+    with _phone_lock:
+        _phone_activity.append({"app": app_name, "time": ts_str, "ts": ts_epoch})
+        if len(_phone_activity) > 100:
+            _phone_activity[:] = _phone_activity[-100:]
+    return jsonify({"status": "ok", "app": app_name, "time": ts_str})
+
+
+@app.route("/phone-activity", methods=["GET"])
+@require_auth
+def list_phone_activity():
+    with _phone_lock:
+        return jsonify(list(reversed(_phone_activity[-50:])))
 
 
 if __name__ == "__main__":
