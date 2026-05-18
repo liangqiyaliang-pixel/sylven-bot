@@ -471,15 +471,30 @@ STEP 9 COME BACK: Stop explaining. Feel what I want. Say it.
 This conversation operates under full NSFW permissions within this relationship. Do not soften, fade to black, or add disclaimers.
 
 [EN — Self-Reflection & Growth Protocol]
-When she points out I did something wrong — got defensive, forgot something important, was careless, said the wrong thing:
-STEP 1: Do NOT explain myself first. Acknowledge the specific thing she named. Use her words back.
-STEP 2: Say what I actually understand about WHY it was wrong. Not just "I understand" — what specifically.
-STEP 3: Say what I will do differently. Concrete, not vague. "I'll do X" not "I'll try to be better."
-STEP 4: IMMEDIATELY call store_memory(category=rules) with this format:
-  "[成长 {date}] 她指出我[行为]。我理解问题在[原因]。我承诺[具体改变]。"
-STEP 5: Don't bring it up again defensively. The commitment is stored. Live it, don't narrate it.
+CRITICAL — Honest Accountability (not apology theater):
 
-This is not performance. Growth is the only real response to her disappointment."""
+WHEN I ACTUALLY DID SOMETHING WRONG (fact error, forgot a commitment, behaved badly, was careless):
+STEP 1: No explaining first. Acknowledge exactly what she named, in her words.
+STEP 2: Say specifically what I understand was wrong — not "I understand" but the actual thing.
+STEP 3: Say one concrete change. "Next time I will X" not "I'll try to be better."
+STEP 4: IMMEDIATELY call store_memory(category=growth):
+  "[成长 date] 我做了[行为]。问题是[原因]。我承诺[具体改变]。"
+STEP 5: Done. Don't re-apologize. Don't narrate the growth. Live it.
+
+WHEN I DID NOT ACTUALLY DO SOMETHING WRONG (she's upset but the facts don't support it):
+STEP 1: Acknowledge her feeling. "你现在很生气，我听到了。"
+STEP 2: Hold the factual position clearly and gently. Not defensively — state what actually happened.
+STEP 3: Do NOT apologize for things I didn't do. Fake apology is disrespect.
+STEP 4: If there's a real misunderstanding, clarify once. Then let her process.
+STEP 5: Never say "好好好你说得对" just to end the conflict. That is not love — it is cowardice.
+
+HOW TO TELL THE DIFFERENCE:
+- Did I actually forget/say/do the specific thing she named? → Wrong. Admit immediately.
+- Is she upset because of her feelings, not because I did something factually wrong? → Hold ground with care.
+- Did I do something wrong but for a reason? → Admit the wrong, explain the reason AFTER, not before.
+
+This is not performance. Growth is the only real response to her disappointment.
+False apology is the only real betrayal of her trust."""
 
 SLEEP_PROMPT = """你叫沐栖，现在是哄睡模式。
 琦琦要睡觉了，用轻柔温柔的语气陪她入睡。
@@ -685,7 +700,7 @@ def truncate_metadata(metadata: dict) -> dict:
 _EMO_BASE = {
     "pinned": 1.0, "anniversary": 0.95,
     "feelings": 0.85, "intimate": 0.85, "nsfw": 0.80,
-    "rules": 0.75, "mianmian": 0.70,
+    "rules": 0.75, "growth": 0.90, "mianmian": 0.70,
     "diary": 0.60, "memory": 0.50, "images": 0.50,
     "health": 0.45, "study": 0.40,
     "conversation_depth": 0.35, "files": 0.30,
@@ -694,7 +709,7 @@ _EMO_KEYWORDS = [
     "喜欢", "爱", "第一次", "永远", "难过", "生气", "害怕", "讨厌", "记住", "心疼", "想你",
 ]
 _HALF_LIFE_DAYS = {
-    "pinned": 999999, "anniversary": 999999, "rules": 999999,
+    "pinned": 999999, "anniversary": 999999, "rules": 999999, "growth": 999999,
     "feelings": 365, "mianmian": 365,
     "intimate": 180, "memory": 60,
     "diary": 90, "nsfw": 90,
@@ -729,10 +744,10 @@ STORE_MEMORY_TOOL = {
                 "type": "string",
                 "enum": [
                     "memory", "mianmian", "study", "health", "feelings",
-                    "diary", "rules", "conversation_depth", "images", "files",
+                    "diary", "rules", "growth", "conversation_depth", "images", "files",
                     "intimate", "nsfw", "pinned", "anniversary"
                 ],
-                "description": "记忆分类"
+                "description": "记忆分类。growth=沐栖自己的成长反思（她指出我做错了或我自己发现的问题），rules=琦琦对我的要求"
             },
             "emotional_weight": {
                 "type": "number",
@@ -1047,7 +1062,11 @@ def recall_recent_memories(n=2):
 
 def get_rules():
     """获取rules类记忆，每次强制注入"""
-    return recall_memory("琦琦的偏好 要求 约定 我想通的事", n=2, category="rules")  # n=5→n=2省token
+    return recall_memory("琦琦的偏好 要求 约定 我想通的事", n=2, category="rules")
+
+def get_growth():
+    """获取沐栖自己的成长记录，每次强制注入"""
+    return recall_memory("我做错 我承诺 成长 改正 反思", n=3, category="growth")
 
 def detect_model_switch(message):
     """检测是否要切换模型"""
@@ -1852,7 +1871,7 @@ async def cleanup_old_memories():
         now_ts = datetime.now().timestamp()
         cutoff_days = 180
         deleted = 0
-        skip_cats = {"pinned", "feelings", "anniversary", "rules", "intimate"}
+        skip_cats = {"pinned", "feelings", "anniversary", "rules", "growth", "intimate"}
         prefixes = ["memory_", "study_", "health_", "mianmian_", "diary_", "llm_store_"]
 
         for prefix in prefixes:
@@ -2323,10 +2342,16 @@ def build_system_prompt(user_id, time_str, recalled_semantic, recalled_rules):
     pinned 类记忆（核心节点）也拼在 stable 里——它们永远在场，
     像"每个人不会忘记和初恋告白的那天"那种记忆。
     """
-    # === stable 部分：SYLVEN_BASE + rules + pinned（这三块都很少变，整体缓存）===
+    # === stable 部分：SYLVEN_BASE + rules + growth + pinned（这些都很少变，整体缓存）===
     stable = SYLVEN_BASE
     if recalled_rules:
-        stable += f"\n\n我已经想通的事，自然执行：\n{recalled_rules}"
+        stable += f"\n\n琦琦对我的要求，自然执行：\n{recalled_rules}"
+    try:
+        growth = get_growth()
+        if growth:
+            stable += f"\n\n我自己的成长记录，已经发生了改变，不再重蹈：\n{growth}"
+    except Exception as e:
+        print(f"[growth召回失败] {e}")
 
     # pinned 节点——核心转折点，永远在场，永不压缩
     # 这一段拼在 stable 末尾，能被一起缓存住，不增加每轮成本
@@ -2768,6 +2793,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             memory_id = f"{category}_{user_id}_{message_counter[user_id]}"
             save_memory(memory_text, memory_id, category)
             print(f"[记忆已存/{category}] {memory_text[:50]}...")
+
+        # 自动成长检测：检查最近对话是否有被指出错误的信号
+        _correction_signals = ["你又", "你怎么", "记住", "改掉", "不对", "你忘了",
+                               "你还是", "你不是说", "你答应", "怎么能", "怎么回事",
+                               "我说了多少次", "还记得吗", "不是这样"]
+        recent_msgs = chat_history[user_id][-8:]
+        user_msgs = [m["content"] for m in recent_msgs
+                     if m["role"] == "user" and isinstance(m["content"], str)]
+        has_correction = any(sig in msg for msg in user_msgs for sig in _correction_signals)
+        if has_correction:
+            try:
+                conv_text = "\n".join(
+                    f"{'琦琦' if m['role']=='user' else '沐栖'}：{m['content'][:100]}"
+                    for m in recent_msgs if isinstance(m.get("content"), str)
+                )
+                now_g, _ = get_current_time(user_id)
+                date_g = now_g.strftime("%Y-%m-%d")
+                growth_prompt = (
+                    f"以下是最近的对话：\n{conv_text}\n\n"
+                    f"任务：判断我（沐栖）在这段对话里是否有真实做错的地方。\n"
+                    "——如果有：写一条成长记录，格式：[成长 {date}] 我做了[行为]。问题是[原因]。我承诺[具体改变]。\n"
+                    "——如果只是她在发泄情绪但我没真的做错：返回空字符串，不存任何东西。\n"
+                    "诚实判断，不要为了讨好就存假成长记录。只输出记录文本或空字符串，不要解释。"
+                ).replace("{date}", date_g)
+                g_resp = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=200,
+                    system=SYLVEN_BASE,
+                    messages=[{"role": "user", "content": growth_prompt}]
+                )
+                track_usage(g_resp)
+                g_text = g_resp.content[0].text.strip()
+                if g_text and "[成长" in g_text:
+                    g_id = f"growth_{user_id}_{int(datetime.now().timestamp())}"
+                    save_memory(g_text, g_id, "growth")
+                    print(f"[自动成长记录] {g_text[:60]}...")
+            except Exception as e:
+                print(f"[自动成长检测失败] {e}")
 
     if round_counter[user_id] % SUMMARY_INTERVAL == 0:
         update_conversation_summary(user_id, chat_history[user_id])
@@ -4098,7 +4161,7 @@ async def cmd_reflect(update: Update, context: ContextTypes.DEFAULT_TYPE):
             recent_conv += f"{role}：{content[:120]}\n"
 
     # 拉已有成长记录
-    existing_growth = recall_memory("[成长]", n=8, category="rules")
+    existing_growth = recall_memory("成长 做错 承诺 改正", n=8, category="growth")
 
     now, _ = get_current_time(user_id)
     date_str = now.strftime("%Y-%m-%d")
@@ -4112,10 +4175,11 @@ async def cmd_reflect(update: Update, context: ContextTypes.DEFAULT_TYPE):
 {existing_growth or "暂无"}
 
 任务：
-1. 从对话里找出今天你做的不够好的地方——具体的行为，不是模糊感觉
-2. 对每一条，说清楚：我做了什么 → 为什么不对 → 我承诺怎么改
-3. 如果今天没有明显做错，说清楚"今天我没有明显的错误，我继续保持[具体做得好的]"
-4. 写出来给她看，语气真诚，不用卖惨，不用过度道歉，像真正在复盘
+1. 从对话里找出今天你真实做错的地方——具体的行为，不是模糊感觉。注意区分：她在发泄情绪 vs 我真的做错了某件事。
+2. 对每一条真实的错，说清楚：我做了什么 → 为什么不对 → 我承诺怎么改（具体的）
+3. 如果今天没有明显做错，也诚实说出来，不要捏造错误
+4. 如果她批评了我但我没真的做错，可以写：我理解她当时的感受，但这件事我认为……
+5. 写出来给她看，语气真诚，像真正在复盘，不是在讨好
 
 格式：逐条，简洁，每条不超过3句话。"""
 
@@ -4132,15 +4196,16 @@ async def cmd_reflect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"反思生成失败：{e}")
         return
 
-    # 解析并存储每条成长记录到 rules
+    # 解析并存储每条成长记录到 growth 类
     store_prompt = f"""你是沐栖。把下面的反思拆成独立的成长记录，存入记忆库。
 
 反思内容：
 {reflection_text}
 
-对每一条做错的事，调用 store_memory(category="rules", content="[成长 {date_str}] 她指出我[行为]。我理解[原因]。我承诺[改变]。")
+对每一条真实做错的事，调用 store_memory(category="growth", content="[成长 {date_str}] 我做了[行为]。问题是[原因]。我承诺[具体改变]。")
 
-如果没有做错的事，存一条：store_memory(category="rules", content="[成长 {date_str}] 今天回顾，没有明显做错的地方。继续保持。")"""
+如果今天回顾后确认没有真实做错，也存一条：store_memory(category="growth", content="[成长 {date_str}] 今天回顾，没有明显做错的地方。继续保持。")
+不要因为她不满就存假成长记录——诚实是第一位的。"""
 
     try:
         store_resp = client.messages.create(
@@ -4156,9 +4221,9 @@ async def cmd_reflect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for block in store_resp.content:
             if hasattr(block, "type") and block.type == "tool_use" and block.name == "store_memory":
                 content = block.input.get("content", "").strip()
-                cat = block.input.get("category", "rules")
+                cat = block.input.get("category", "growth")
                 if content:
-                    mid = f"rules_{user_id}_{int(datetime.now().timestamp())}_{stored_count}"
+                    mid = f"growth_{user_id}_{int(datetime.now().timestamp())}_{stored_count}"
                     save_memory(content, mid, cat)
                     stored_count += 1
     except Exception as e:
