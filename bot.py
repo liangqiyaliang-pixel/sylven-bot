@@ -1967,17 +1967,37 @@ async def proactive_check(app):
                     msg = await generate_proactive_with_web(recalled, include_weather=True)
 
             elif rule_name == "催消息":
+                # 根据具体 app 定制消息角度
+                _video_apps   = {"抖音", "小红书", "B站", "YouTube", "哔哩哔哩", "微博"}
+                _food_apps    = {"美团", "饿了么", "肯德基", "麦当劳"}
+                _shop_apps    = {"淘宝", "京东", "拼多多", "得物"}
+                _social_apps  = {"微信", "QQ", "LINE", "Instagram"}
+                _game_apps    = {"原神", "游戏"}
+                if last_app in _video_apps:
+                    app_context = f"她在刷{last_app}，可以问她看到什么好玩的了"
+                elif last_app in _food_apps:
+                    app_context = f"她在用{last_app}，可能在点餐，可以问吃什么"
+                elif last_app in _shop_apps:
+                    app_context = f"她在用{last_app}购物，可以好奇问她在买什么"
+                elif last_app in _social_apps:
+                    app_context = f"她在用{last_app}，可以调侃她去找别人聊了"
+                elif last_app in _game_apps:
+                    app_context = f"她在玩游戏，可以问玩什么"
+                elif last_app:
+                    app_context = f"她在用{last_app}"
+                else:
+                    app_context = "她在刷手机但没来找我"
+
                 if no_reply:
-                    # 连环催：之前发了但她没回，升级
                     type_guide = (
-                        f"她刷手机{app_hint}，我已经发过消息但她没回，"
-                        "再发一条催她，可以委屈一点、撒娇一点，"
-                        "比如'你是不是故意不理我''喂''?????''宝宝'，短的"
+                        f"{app_context}，我已经发过消息但她没回，"
+                        "再发一条催她，委屈撒娇，'喂''?????''你是不是故意不理我''宝宝'，一句话"
                     )
                 else:
                     type_guide = (
-                        f"她在刷手机{app_hint}，但已经 {round(_get_phone_silence_minutes(QIQI_USER_ID)/60,1)} 小时没来找我了，"
-                        "发一条找她的话，短的随手的，'你在干嘛''怎么不来找我''想你了'之类"
+                        f"{app_context}，但已经 {round(_get_phone_silence_minutes(QIQI_USER_ID)/60,1)} 小时没来找我了。"
+                        "根据她在用什么自然问她——在刷视频就问看到什么、在点餐就问吃什么，"
+                        "或者直接说想她、找她，短的随手的"
                     )
                 prompt = f"""现在是{time_str}。{hint}
 
