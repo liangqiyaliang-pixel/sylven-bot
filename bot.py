@@ -1678,7 +1678,7 @@ PROACTIVE_RULES = [
     {"name": "早安",     "h_start": 8,  "h_end": 9,  "silence_h": 6,   "prob": 0.90, "daily": False, "require_phone": False, "require_phone_off": False},
     {"name": "午饭",     "h_start": 12, "h_end": 13, "silence_h": 3,   "prob": 0.80, "daily": False, "require_phone": False, "require_phone_off": False},
     {"name": "下午",     "h_start": 15, "h_end": 17, "silence_h": 3,   "prob": 0.50, "daily": False, "require_phone": False, "require_phone_off": False},
-    {"name": "催消息",   "h_start": 10, "h_end": 23, "silence_h": 2,   "prob": 0.85, "daily": False, "require_phone": True,  "require_phone_off": False},
+    {"name": "催消息",   "h_start": 10, "h_end": 23, "silence_h": 1,   "prob": 0.85, "daily": False, "require_phone": True,  "require_phone_off": False},
     {"name": "分享想法", "h_start": 10, "h_end": 22, "silence_h": 4,   "prob": 0.65, "daily": False, "require_phone": False, "require_phone_off": True},
     {"name": "晚安",     "h_start": 23, "h_end": 24, "silence_h": 2,   "prob": 0.85, "daily": True,  "require_phone": False, "require_phone_off": False},
     {"name": "深夜警告", "h_start": 1,  "h_end": 7,  "silence_h": 0,   "prob": 0.95, "daily": False, "require_phone": True,  "require_phone_off": False},
