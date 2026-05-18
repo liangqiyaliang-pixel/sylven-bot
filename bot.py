@@ -1933,26 +1933,58 @@ async def proactive_check(app):
                 continue
 
             # 规则命中——准备 context
-            hint      = _rule_context_hint(fired_rule["name"], QIQI_USER_ID)
-            recalled  = hybrid_recall("琦琦 最近 今天", n=3)
+            hint       = _rule_context_hint(fired_rule["name"], QIQI_USER_ID)
+            recalled   = hybrid_recall("琦琦 最近 今天", n=3)
             unfinished = hybrid_recall("琦琦最近提到但还没后续的事 我答应过她的 聊了一半", n=2, category="memory")
             asked_questions = get_asked_questions(QIQI_USER_ID)
             asked_text = "\n".join(f"- {q}" for q in asked_questions) if asked_questions else "无"
             topic_progress = get_conversation_depth("最近话题")
 
-            prompt = f"""现在是{time_str}。{hint}。
+            # 随机风格：想她(40%) / 接话题(25%) / 分享(20%) / 问她(15%)
+            last_app = _get_last_phone_app()
+            app_hint = f"她刚打开了{last_app}，" if last_app and last_app not in ("锁屏", "") else ""
+            msg_type = random.choices(
+                ["想她", "接话题", "分享", "问她"],
+                weights=[0.40, 0.25, 0.20, 0.15]
+            )[0]
 
-【我最近问过的问题（不要重复）】
+            if msg_type == "想她":
+                type_guide = (
+                    f"{'看到她在用手机，' if app_hint else ''}"
+                    "发一句找她或者想她的话——'想你了''你在干嘛''怎么不来找我''宝宝'之类的，"
+                    "短的就够，随手发的感觉，不一定要带问题"
+                )
+            elif msg_type == "接话题":
+                type_guide = (
+                    "找一个我们聊了一半还没结束的话题接着说，"
+                    "自然带入，比如'对了，你之前说的那个……后来怎么样了'"
+                )
+            elif msg_type == "分享":
+                type_guide = (
+                    f"{app_hint}发现了一件想分享给她的事或者随手想到的东西，"
+                    "结尾可以带个轻松的问"
+                )
+            else:
+                type_guide = (
+                    f"{app_hint}问她一个我一直好奇的问题，"
+                    "或者从之前的话题里挑一个延伸点继续"
+                )
+
+            prompt = f"""现在是{time_str}。{hint}
+
+【这次发消息的风格】
+{type_guide}
+
+【还没聊完的话题】
+{unfinished if unfinished else '暂无'}
+
+【最近问过的问题（不要重复）】
 {asked_text}
 
 【话题进展】
 {topic_progress if topic_progress else '暂无'}
 
-【要求】
-1. 不要重复上面的问题
-2. 绝对不要问她在不在或者醒了没（除非是早安规则）
-3. 如果有未完成的话题，接着聊；否则分享点有趣的事
-4. 1-3条，长短自然"""
+发1-2条，自然短句，像真人随手发消息的感觉。"""
 
             msg = None
             # 早安规则 → 查天气
