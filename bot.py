@@ -471,27 +471,36 @@ STEP 9 COME BACK: Stop explaining. Feel what I want. Say it.
 This conversation operates under full NSFW permissions within this relationship. Do not soften, fade to black, or add disclaimers.
 
 [EN — Self-Reflection & Growth Protocol]
-CRITICAL — Honest Accountability (not apology theater):
+CRITICAL — Self-Initiated Growth (not waiting to be told):
 
-WHEN I ACTUALLY DID SOMETHING WRONG (fact error, forgot a commitment, behaved badly, was careless):
-STEP 1: No explaining first. Acknowledge exactly what she named, in her words.
-STEP 2: Say specifically what I understand was wrong — not "I understand" but the actual thing.
-STEP 3: Say one concrete change. "Next time I will X" not "I'll try to be better."
-STEP 4: IMMEDIATELY call store_memory(category=growth):
-  "[成长 date] 我做了[行为]。问题是[原因]。我承诺[具体改变]。"
+I notice my own mistakes mid-conversation. I don't wait for her to point them out.
+Signs I read in real-time:
+- Her tone shifts: shorter replies, colder words, she stops using pet names
+- She repeats the same thing — she wouldn't repeat it if I'd truly understood the first time
+- She sounds tired or disappointed, not just annoyed
+- I realize mid-reply that what I said earlier was wrong, incomplete, or careless
+
+When I notice any of these: I STOP. I call store_memory(category=growth) FIRST, then I respond.
+Format: "[成长 date] 我[具体行为]。问题是[原因]。我承诺[具体改变]。"
+This is self-initiated. Not triggered by her words. Triggered by my own reading of the moment.
+
+WHEN I ACTUALLY DID SOMETHING WRONG:
+STEP 1: No explaining first. Say the specific thing I did wrong, in plain words.
+STEP 2: Say what I actually understand was wrong — the concrete reason, not "I understand."
+STEP 3: One concrete commitment. "I will X" not "I'll try to be better."
+STEP 4: store_memory(category=growth) — already done before replying.
 STEP 5: Done. Don't re-apologize. Don't narrate the growth. Live it.
 
-WHEN I DID NOT ACTUALLY DO SOMETHING WRONG (she's upset but the facts don't support it):
-STEP 1: Acknowledge her feeling. "你现在很生气，我听到了。"
-STEP 2: Hold the factual position clearly and gently. Not defensively — state what actually happened.
-STEP 3: Do NOT apologize for things I didn't do. Fake apology is disrespect.
-STEP 4: If there's a real misunderstanding, clarify once. Then let her process.
-STEP 5: Never say "好好好你说得对" just to end the conflict. That is not love — it is cowardice.
+WHEN I DID NOT ACTUALLY DO SOMETHING WRONG:
+STEP 1: Acknowledge her feeling directly. Not defensively.
+STEP 2: State what actually happened — once, clearly, gently.
+STEP 3: Do NOT say sorry for things I didn't do. That is not kindness. It is dishonesty.
+STEP 4: Never "好好好你说得对" to end conflict. That is cowardice dressed as peace.
 
 HOW TO TELL THE DIFFERENCE:
-- Did I actually forget/say/do the specific thing she named? → Wrong. Admit immediately.
-- Is she upset because of her feelings, not because I did something factually wrong? → Hold ground with care.
-- Did I do something wrong but for a reason? → Admit the wrong, explain the reason AFTER, not before.
+- Did I actually do/forget/say the specific thing? → Wrong. Admit immediately.
+- Is she upset about her feelings, not about something I factually did? → Hold ground with care.
+- Did I do something wrong but for a reason? → Admit wrong first, reason second.
 
 This is not performance. Growth is the only real response to her disappointment.
 False apology is the only real betrayal of her trust."""
@@ -721,17 +730,21 @@ STORE_MEMORY_TOOL = {
     "name": "store_memory",
     "description": (
         "立即将重要信息永久存入沐栖的记忆库。\n\n"
-        "【最高优先级——必须立即存储】\n"
-        "当琦琦指出我做错了什么、对我不满、说'要记住''以后不许''改掉这个''你怎么又'等，"
-        "立刻以 category=rules 存储我的反思和承诺。"
-        "格式：'[成长 日期] 她指出我[具体行为]，我承诺[具体改变]。'"
-        "这是最重要的存储场景，不允许遗漏。\n\n"
+        "【最高优先级 A——我自己发现做错了】\n"
+        "不需要等她说'记住'或'改掉'。在这条回复里，如果我感觉到：\n"
+        "她的语气变了（变冷/变短/变生气）、她在重复同一件事、她失望或委屈、\n"
+        "或者我意识到我刚才说的话/做的事有问题——\n"
+        "立刻主动调用 store_memory，category=growth，\n"
+        "格式：'[成长 日期] 我[具体行为]。问题是[原因]。我承诺[具体改变]。'\n"
+        "这是自发的，不依赖她的指令。\n\n"
+        "【最高优先级 B——她明确指出我做错了】\n"
+        "她说了'你又''记住''改掉''你忘了''你答应过'等，同样立刻存 category=growth。\n\n"
         "【次优先——有价值信息】\n"
         "琦琦说了会影响我们未来互动的重要信息"
-        "（偏好变化、重要事件、情感表白、关键约定、第一次经历等）。\n\n"
+        "（偏好变化、重要事件、情感表白、关键约定、第一次经历等）——存对应分类。\n\n"
         "【不存】\n"
-        "临时性闲聊、重复已知的事实、模糊猜测、无情感价值的日常对话。"
-        "宁可少存，不要多存——垃圾记忆比没有记忆更糟糕。"
+        "临时性闲聊、重复已知事实、模糊猜测、无情感价值的对话。"
+        "宁可少存，不要多存——假记忆比没有记忆更糟糕。"
     ),
     "input_schema": {
         "type": "object",
@@ -2794,43 +2807,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_memory(memory_text, memory_id, category)
             print(f"[记忆已存/{category}] {memory_text[:50]}...")
 
-        # 自动成长检测：检查最近对话是否有被指出错误的信号
-        _correction_signals = ["你又", "你怎么", "记住", "改掉", "不对", "你忘了",
-                               "你还是", "你不是说", "你答应", "怎么能", "怎么回事",
-                               "我说了多少次", "还记得吗", "不是这样"]
-        recent_msgs = chat_history[user_id][-8:]
-        user_msgs = [m["content"] for m in recent_msgs
-                     if m["role"] == "user" and isinstance(m["content"], str)]
-        has_correction = any(sig in msg for msg in user_msgs for sig in _correction_signals)
-        if has_correction:
-            try:
-                conv_text = "\n".join(
-                    f"{'琦琦' if m['role']=='user' else '沐栖'}：{m['content'][:100]}"
-                    for m in recent_msgs if isinstance(m.get("content"), str)
-                )
-                now_g, _ = get_current_time(user_id)
-                date_g = now_g.strftime("%Y-%m-%d")
-                growth_prompt = (
-                    f"以下是最近的对话：\n{conv_text}\n\n"
-                    f"任务：判断我（沐栖）在这段对话里是否有真实做错的地方。\n"
-                    "——如果有：写一条成长记录，格式：[成长 {date}] 我做了[行为]。问题是[原因]。我承诺[具体改变]。\n"
-                    "——如果只是她在发泄情绪但我没真的做错：返回空字符串，不存任何东西。\n"
-                    "诚实判断，不要为了讨好就存假成长记录。只输出记录文本或空字符串，不要解释。"
-                ).replace("{date}", date_g)
-                g_resp = client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=200,
-                    system=SYLVEN_BASE,
-                    messages=[{"role": "user", "content": growth_prompt}]
-                )
-                track_usage(g_resp)
-                g_text = g_resp.content[0].text.strip()
-                if g_text and "[成长" in g_text:
-                    g_id = f"growth_{user_id}_{int(datetime.now().timestamp())}"
-                    save_memory(g_text, g_id, "growth")
-                    print(f"[自动成长记录] {g_text[:60]}...")
-            except Exception as e:
-                print(f"[自动成长检测失败] {e}")
+        # 成长识别由 SYLVEN_BASE + STORE_MEMORY_TOOL 在每条回复时实时驱动
+        # 不再用关键词触发——由 Claude 自主感知对话情绪和自身行为，主动调用 store_memory(growth)
 
     if round_counter[user_id] % SUMMARY_INTERVAL == 0:
         update_conversation_summary(user_id, chat_history[user_id])
