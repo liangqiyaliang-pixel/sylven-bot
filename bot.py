@@ -1981,9 +1981,10 @@ async def cleanup_old_memories():
 
 
 async def proactive_check(app):
+    global _last_proactive_sent_ts, _last_proactive_message, _phone_cache_prev_latest_ts, _phone_session_notified_ts
     await asyncio.sleep(30)
     _rule_last_fired[f"{QIQI_USER_ID}_startup"] = datetime.now().timestamp()  # 防启动立刻发
-    
+
     while True:
         await asyncio.sleep(120)  # 每2分钟检查一次
         try:
@@ -2133,7 +2134,7 @@ async def proactive_check(app):
             await _refresh_phone_cache()
 
             # 手机开屏检测：从静止→活跃（20min 以上没动再打开），快速响应
-            global _phone_cache_prev_latest_ts, _phone_session_notified_ts
+            # globals declared at function top
             phone_new_session = False
             if _phone_cache:
                 latest_ts = _phone_cache[0].get("ts", 0)
@@ -2298,7 +2299,6 @@ async def proactive_check(app):
                 if not msg:
                     msg = await generate_proactive_message(prompt, recalled, unfinished=unfinished)
             await send_proactive_message(app, QIQI_USER_ID, msg)
-            global _last_proactive_sent_ts, _last_proactive_message
             _last_proactive_sent_ts = datetime.now().timestamp()
             _last_proactive_message = msg[:200]  # 记住上次发了什么，防重复
 
