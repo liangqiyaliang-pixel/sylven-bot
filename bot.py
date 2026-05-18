@@ -1818,7 +1818,7 @@ async def cleanup_old_memories():
         cutoff_days = 180
         deleted = 0
         skip_cats = {"pinned", "feelings", "anniversary", "rules", "intimate"}
-        prefixes = ["memory_", "study_", "health_", "mianmian_", "diary_"]
+        prefixes = ["memory_", "study_", "health_", "mianmian_", "diary_", "llm_store_"]
 
         for prefix in prefixes:
             ids = []
@@ -1855,8 +1855,14 @@ async def cleanup_old_memories():
                     try:
                         mem_ts = float(ts_raw)
                         age_days = (now_ts - mem_ts) / 86400
-                    except:
-                        continue
+                    except (ValueError, TypeError):
+                        # ISO string fallback (e.g. "2026-05-17T12:34:56+09:00")
+                        try:
+                            from datetime import timezone
+                            mem_ts = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00")).timestamp()
+                            age_days = (now_ts - mem_ts) / 86400
+                        except Exception:
+                            continue
                     if age_days < cutoff_days:
                         continue
                     # 概率遗忘：emo越低、越旧越容易被清掉
