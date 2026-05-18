@@ -2818,7 +2818,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "诚实判断，不要为了讨好就存假成长记录。只输出记录文本或空字符串，不要解释。"
                 ).replace("{date}", date_g)
                 g_resp = client.messages.create(
-                    model="claude-haiku-4-5-20251001",
+                    model="claude-sonnet-4-6",
                     max_tokens=200,
                     system=SYLVEN_BASE,
                     messages=[{"role": "user", "content": growth_prompt}]
