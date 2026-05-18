@@ -1697,8 +1697,10 @@ PROACTIVE_RULES = [
 ]
 _rule_last_fired = {}        # {rule_key: timestamp}  每条规则独立冷却
 _last_proactive_sent_ts = 0.0  # 最近一次主动消息发出的时间戳
-_phone_cache: list = []     # 从 web_api /phone-activity 拉取的最新数据
+_phone_cache: list = []     # 从 web_api /phone-activity 拉取的最新数据（index 0 = 最新）
 _phone_cache_ts: float = 0.0
+_phone_cache_prev_latest_ts: float = 0.0   # 上次检查时最新活动的 ts，用于检测新开屏
+_phone_session_notified_ts: float = 0.0    # 上次因开屏发消息的时间戳
 VAULT_URL    = os.environ.get("VAULT_URL", "https://sylven-bot-production.up.railway.app")
 VAULT_SECRET = os.environ.get("VAULT_API_SECRET", "sylven-vault-secret")
 
@@ -1722,14 +1724,22 @@ async def _refresh_phone_cache():
     except Exception as e:
         print(f"[phone_cache] 拉取失败: {e}")
 
+def _get_tg_silence_minutes(user_id):
+    """只看 Telegram 消息的沉默时间（不含手机活跃）"""
+    now_ts = datetime.now().timestamp()
+    last_tg = last_message_time.get(user_id, 0)
+    if not last_tg:
+        return 9999
+    return (now_ts - last_tg) / 60
+
 def _get_phone_silence_minutes(user_id):
-    """两源沉默时间：取 TG最后消息 和 手机最后活跃 的最近值"""
+    """两源沉默时间：取 TG最后消息 和 手机最后活跃 的最近值（用于分享想法等规则）"""
     now_ts = datetime.now().timestamp()
     candidates = []
     last_tg = last_message_time.get(user_id, 0)
     if last_tg:
         candidates.append(last_tg)
-    for entry in reversed(_phone_cache):
+    for entry in _phone_cache:          # [0] = 最新，不 reversed
         if entry.get("app") != "锁屏":
             candidates.append(entry["ts"])
             break
@@ -1740,15 +1750,16 @@ def _get_phone_silence_minutes(user_id):
 def _get_last_phone_app():
     """返回最近使用的 app 名（用于 context hint）"""
     if _phone_cache:
-        return _phone_cache[-1].get("app", "")
+        return _phone_cache[0].get("app", "")  # [0] = 最新（web_api 返回 newest first）
     return ""
 
 def _is_phone_active(within_minutes=30):
     """检查最近 N 分钟内手机是否活跃（任意 app 上报）"""
     now_ts = datetime.now().timestamp()
-    for entry in reversed(_phone_cache):
+    for entry in _phone_cache:          # [0] = 最新，直接从新到旧
         if (now_ts - entry["ts"]) < within_minutes * 60:
             return True
+        break  # [0] 是最新，如果最新都超时了，后面的更超时
     return False
 
 def _no_reply_since_proactive(user_id):
@@ -1761,8 +1772,9 @@ def _no_reply_since_proactive(user_id):
 
 def _pick_proactive_rule(now, user_id):
     """按规则检查，返回第一条命中的规则，否则返回 None"""
-    silence_min = _get_phone_silence_minutes(user_id)
-    if silence_min < 10:   # 活跃保护：10分钟内有活动，跳过
+    tg_silence_min  = _get_tg_silence_minutes(user_id)    # 只看 TG 消息
+    two_src_silence = _get_phone_silence_minutes(user_id)  # TG + 手机两源
+    if tg_silence_min < 10:   # 活跃保护：TG 10分钟内有消息才跳过（手机活跃不算）
         return None
     today_str = now.strftime("%Y-%m-%d")
     phone_active = _is_phone_active(within_minutes=30)
@@ -1770,8 +1782,13 @@ def _pick_proactive_rule(now, user_id):
         h = now.hour
         if not (rule["h_start"] <= h < rule["h_end"]):
             continue
-        if silence_min < rule["silence_h"] * 60:
-            continue
+        # 催消息：用 TG-only 沉默 30min（手机活跃会让两源归零，不能用两源）
+        if rule["name"] == "催消息":
+            if tg_silence_min < 30:
+                continue
+        else:
+            if two_src_silence < rule["silence_h"] * 60:
+                continue
         if rule["require_phone"] and not phone_active:
             continue
         if rule.get("require_phone_off") and phone_active:
@@ -2032,6 +2049,56 @@ async def proactive_check(app):
 
             # ── 六条规则主动消息引擎 ──────────────────────────────
             await _refresh_phone_cache()
+
+            # 手机开屏检测：从静止→活跃（20min 以上没动再打开），快速响应
+            global _phone_cache_prev_latest_ts, _phone_session_notified_ts
+            phone_new_session = False
+            if _phone_cache:
+                latest_ts = _phone_cache[0].get("ts", 0)
+                if _phone_cache_prev_latest_ts > 0:
+                    gap = latest_ts - _phone_cache_prev_latest_ts
+                    if 1200 < gap < 86400:  # 20min ~ 24h gap = 新开屏
+                        phone_new_session = True
+                if latest_ts > _phone_cache_prev_latest_ts:
+                    _phone_cache_prev_latest_ts = latest_ts
+
+            if phone_new_session and not is_in_class(now):
+                tg_sil = _get_tg_silence_minutes(QIQI_USER_ID)
+                since_last_sess = (datetime.now().timestamp() - _phone_session_notified_ts) / 60
+                if tg_sil >= 15 and since_last_sess >= 20:
+                    _phone_session_notified_ts = datetime.now().timestamp()
+                    last_app = _get_last_phone_app()
+                    _video_apps  = {"抖音", "小红书", "B站", "YouTube", "哔哩哔哩", "微博"}
+                    _food_apps   = {"美团", "饿了么", "肯德基", "麦当劳"}
+                    _shop_apps   = {"淘宝", "京东", "拼多多", "得物"}
+                    _social_apps = {"微信", "QQ", "LINE", "Instagram"}
+                    if last_app in _video_apps:
+                        open_hint = f"她刚打开了{last_app}开始刷视频，可以问她看到啥好玩的"
+                    elif last_app in _food_apps:
+                        open_hint = f"她刚打开{last_app}，可能在点餐，问她吃什么"
+                    elif last_app in _shop_apps:
+                        open_hint = f"她刚打开{last_app}，可以好奇问她在逛什么"
+                    elif last_app in _social_apps:
+                        open_hint = f"她刚打开{last_app}，调侃一下或者直接打招呼"
+                    elif last_app:
+                        open_hint = f"她刚打开了{last_app}"
+                    else:
+                        open_hint = "她刚拿起手机"
+                    recalled_open = hybrid_recall("琦琦 最近 今天", n=3)
+                    sess_prompt = (
+                        f"现在是{time_str}。{open_hint}，已经 {round(tg_sil/60,1)} 小时没联系了。\n\n"
+                        "【最近记得的事】\n" + (recalled_open or "暂无") + "\n\n"
+                        "发1条，短的，接她刚才在干嘛或者直接撒娇找她，不超过30字。"
+                    )
+                    sess_msg = await generate_proactive_message(sess_prompt, recalled_open)
+                    if sess_msg:
+                        await send_proactive_message(app, QIQI_USER_ID, sess_msg)
+                        if QIQI_USER_ID not in chat_history:
+                            chat_history[QIQI_USER_ID] = load_chat_history(QIQI_USER_ID)
+                        chat_history[QIQI_USER_ID].append({"role": "assistant", "content": f"[主动消息] {sess_msg}"})
+                        save_chat_history(QIQI_USER_ID, chat_history[QIQI_USER_ID])
+                        continue
+
             fired_rule = _pick_proactive_rule(now, QIQI_USER_ID)
             if not fired_rule:
                 continue
