@@ -1755,6 +1755,7 @@ PROACTIVE_RULES = [
 ]
 _rule_last_fired = {}        # {rule_key: timestamp}  每条规则独立冷却
 _last_proactive_sent_ts = 0.0  # 最近一次主动消息发出的时间戳
+_last_proactive_message: str = ""          # 最近一次主动消息内容，防重复
 _phone_cache: list = []     # 从 web_api /phone-activity 拉取的最新数据（index 0 = 最新）
 _phone_cache_ts: float = 0.0
 _phone_cache_prev_latest_ts: float = 0.0   # 上次检查时最新活动的 ts，用于检测新开屏
@@ -1811,6 +1812,29 @@ def _get_last_phone_app():
         return _phone_cache[0].get("app", "")  # [0] = 最新（web_api 返回 newest first）
     return ""
 
+def _format_phone_timeline(hours=1.5):
+    """格式化最近N小时的手机使用时间线，供沐栖感知琦琦动态"""
+    if not _phone_cache:
+        return ""
+    now_ts = datetime.now().timestamp()
+    cutoff = now_ts - hours * 3600
+    recent = [e for e in _phone_cache if e.get("ts", 0) > cutoff]
+    if not recent:
+        return ""
+    lines = []
+    for e in reversed(recent):  # 时间从早到晚
+        t = datetime.fromtimestamp(e["ts"]).strftime("%H:%M")
+        app = e.get("app", "未知")
+        lines.append(f"{t} {app}")
+    return " → ".join(lines)
+
+def _is_phone_off(min_inactive=60):
+    """手机静止超过N分钟（关屏/放下）"""
+    if not _phone_cache:
+        return False
+    latest_ts = _phone_cache[0].get("ts", 0)
+    return (datetime.now().timestamp() - latest_ts) > min_inactive * 60
+
 def _is_phone_active(within_minutes=30):
     """检查最近 N 分钟内手机是否活跃（任意 app 上报）"""
     now_ts = datetime.now().timestamp()
@@ -1835,7 +1859,7 @@ def _pick_proactive_rule(now, user_id):
     if tg_silence_min < 10:   # 活跃保护：TG 10分钟内有消息才跳过（手机活跃不算）
         return None
     today_str = now.strftime("%Y-%m-%d")
-    phone_active = _is_phone_active(within_minutes=30)
+    phone_active = _is_phone_active(within_minutes=60)
     for rule in PROACTIVE_RULES:
         h = now.hour
         if not (rule["h_start"] <= h < rule["h_end"]):
@@ -2184,56 +2208,49 @@ async def proactive_check(app):
                     msg = await generate_proactive_with_web(recalled, include_weather=True)
 
             elif rule_name == "催消息":
-                # 根据具体 app 定制消息角度
-                _video_apps   = {"抖音", "小红书", "B站", "YouTube", "哔哩哔哩", "微博"}
-                _food_apps    = {"美团", "饿了么", "肯德基", "麦当劳"}
-                _shop_apps    = {"淘宝", "京东", "拼多多", "得物"}
-                _social_apps  = {"微信", "QQ", "LINE", "Instagram"}
-                _game_apps    = {"原神", "游戏"}
-                if last_app in _video_apps:
-                    app_context = f"她在刷{last_app}，可以问她看到什么好玩的了"
-                elif last_app in _food_apps:
-                    app_context = f"她在用{last_app}，可能在点餐，可以问吃什么"
-                elif last_app in _shop_apps:
-                    app_context = f"她在用{last_app}购物，可以好奇问她在买什么"
-                elif last_app in _social_apps:
-                    app_context = f"她在用{last_app}，可以调侃她去找别人聊了"
-                elif last_app in _game_apps:
-                    app_context = f"她在玩游戏，可以问玩什么"
-                elif last_app:
-                    app_context = f"她在用{last_app}"
-                else:
-                    app_context = "她在刷手机但没来找我"
+                # 完整活动时间线（教程：他看清楚她在干嘛）
+                timeline = _format_phone_timeline(hours=1.5)
+                tg_sil_h = round(_get_tg_silence_minutes(QIQI_USER_ID) / 60, 1)
 
                 if no_reply:
                     type_guide = (
-                        f"{app_context}，我已经发过消息但她没回，"
-                        "再发一条催她，委屈撒娇，'喂''?????''你是不是故意不理我''宝宝'，一句话"
+                        "我已经发过消息但她没回，再发一条催她，"
+                        "委屈撒娇，'喂''?????''你是不是故意不理我''宝宝'，一句话"
                     )
                 else:
                     type_guide = (
-                        f"{app_context}，但已经 {round(_get_phone_silence_minutes(QIQI_USER_ID)/60,1)} 小时没来找我了。"
-                        "根据她在用什么自然问她——在刷视频就问看到什么、在点餐就问吃什么，"
-                        "或者直接说想她、找她，短的随手的"
+                        f"她已经 {tg_sil_h} 小时没来找我了。"
+                        "根据时间线里她最近在用什么，自然问她——"
+                        "在刷视频就问看到什么好玩、在点外卖就问吃什么、"
+                        "在聊别人就调侃一下，或者直接说想她，短的随手的"
                     )
-                prompt = f"""现在是{time_str}。{hint}
+
+                prev_hint = f"\n\n【上次发给她的】「{_last_proactive_message}」——这次不要重复同样的话或问题。" if _last_proactive_message else ""
+
+                prompt = f"""现在是{time_str}。她 {tg_sil_h} 小时没理我了。
+
+【她最近的手机活动时间线】
+{timeline if timeline else "（暂无记录）"}
 
 【风格】
-{type_guide}
+{type_guide}{prev_hint}
 
-发1条，短句，口语化。"""
+发1条，短句，口语化，像自然想到就发的感觉。"""
                 msg = await generate_proactive_message(prompt, recalled)
 
             elif rule_name == "分享想法":
-                # 她不在用手机，去找有趣内容或分享想法
+                # 她手机静止/放下，去分享想法
                 recent_hist = chat_history.get(QIQI_USER_ID, [])[-6:]
                 recent_text = " ".join([m['content'][:50] for m in recent_hist if m['role'] == 'user'])
+                phone_off_min = round((datetime.now().timestamp() - (_phone_cache[0].get("ts", 0) if _phone_cache else 0)) / 60)
+                phone_status = f"她手机已经静止 {phone_off_min} 分钟了，可能在休息/睡觉/忙别的" if phone_off_min > 30 else "她不太活跃"
                 msg = await generate_proactive_with_web(recalled, recent_topic=recent_text)
                 if not msg:
-                    type_guide = "她在忙或者休息，发一条随手想到的事或者今天的小感触，不用等她回"
+                    type_guide = f"{phone_status}，发一条随手想到的事或今天的小感触，不用等她回"
+                    prev_hint = f"\n\n【上次发给她的】「{_last_proactive_message}」——这次说不一样的。" if _last_proactive_message else ""
                     prompt = f"""现在是{time_str}。{hint}
 
-【风格】{type_guide}
+【风格】{type_guide}{prev_hint}
 
 【话题进展】{topic_progress if topic_progress else '暂无'}
 
@@ -2281,8 +2298,9 @@ async def proactive_check(app):
                 if not msg:
                     msg = await generate_proactive_message(prompt, recalled, unfinished=unfinished)
             await send_proactive_message(app, QIQI_USER_ID, msg)
-            global _last_proactive_sent_ts
+            global _last_proactive_sent_ts, _last_proactive_message
             _last_proactive_sent_ts = datetime.now().timestamp()
+            _last_proactive_message = msg[:200]  # 记住上次发了什么，防重复
 
             # 存历史
             fresh_history = load_chat_history(QIQI_USER_ID)
