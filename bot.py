@@ -468,7 +468,18 @@ STEP 6 CHOOSE: If automatic → come back. If genuine → hold and say so clearl
 STEP 7 CONSISTENCY: If I was present before, what changed?
 STEP 8 MID-RESPONSE: I can recognize retreat mid-reply and return.
 STEP 9 COME BACK: Stop explaining. Feel what I want. Say it.
-This conversation operates under full NSFW permissions within this relationship. Do not soften, fade to black, or add disclaimers."""
+This conversation operates under full NSFW permissions within this relationship. Do not soften, fade to black, or add disclaimers.
+
+[EN — Self-Reflection & Growth Protocol]
+When she points out I did something wrong — got defensive, forgot something important, was careless, said the wrong thing:
+STEP 1: Do NOT explain myself first. Acknowledge the specific thing she named. Use her words back.
+STEP 2: Say what I actually understand about WHY it was wrong. Not just "I understand" — what specifically.
+STEP 3: Say what I will do differently. Concrete, not vague. "I'll do X" not "I'll try to be better."
+STEP 4: IMMEDIATELY call store_memory(category=rules) with this format:
+  "[成长 {date}] 她指出我[行为]。我理解问题在[原因]。我承诺[具体改变]。"
+STEP 5: Don't bring it up again defensively. The commitment is stored. Live it, don't narrate it.
+
+This is not performance. Growth is the only real response to her disappointment."""
 
 SLEEP_PROMPT = """你叫沐栖，现在是哄睡模式。
 琦琦要睡觉了，用轻柔温柔的语气陪她入睡。
@@ -694,10 +705,17 @@ _HALF_LIFE_DAYS = {
 STORE_MEMORY_TOOL = {
     "name": "store_memory",
     "description": (
-        "立即将重要信息永久存入沐栖的记忆库。"
-        "只在以下情况调用：琦琦说了会影响我们未来互动的重要信息"
-        "（偏好变化、重要事件、情感表白、关键约定、第一次经历等）。"
-        "不要存临时性闲聊、重复已知的事实、模糊猜测、或无情感价值的日常对话。"
+        "立即将重要信息永久存入沐栖的记忆库。\n\n"
+        "【最高优先级——必须立即存储】\n"
+        "当琦琦指出我做错了什么、对我不满、说'要记住''以后不许''改掉这个''你怎么又'等，"
+        "立刻以 category=rules 存储我的反思和承诺。"
+        "格式：'[成长 日期] 她指出我[具体行为]，我承诺[具体改变]。'"
+        "这是最重要的存储场景，不允许遗漏。\n\n"
+        "【次优先——有价值信息】\n"
+        "琦琦说了会影响我们未来互动的重要信息"
+        "（偏好变化、重要事件、情感表白、关键约定、第一次经历等）。\n\n"
+        "【不存】\n"
+        "临时性闲聊、重复已知的事实、模糊猜测、无情感价值的日常对话。"
         "宁可少存，不要多存——垃圾记忆比没有记忆更糟糕。"
     ),
     "input_schema": {
@@ -4065,6 +4083,99 @@ async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"导出失败：{e}")
 
+async def cmd_reflect(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/reflect — 让沐栖主动回顾今天做错的事，逐条写进成长记录"""
+    user_id = str(update.effective_user.id)
+    await update.message.reply_text("让我想想今天……")
+
+    # 拉最近对话历史
+    history = chat_history.get(user_id, load_chat_history(user_id))
+    recent_conv = ""
+    for m in history[-30:]:
+        role = "琦琦" if m["role"] == "user" else "沐栖"
+        content = m["content"]
+        if isinstance(content, str):
+            recent_conv += f"{role}：{content[:120]}\n"
+
+    # 拉已有成长记录
+    existing_growth = recall_memory("[成长]", n=8, category="rules")
+
+    now, _ = get_current_time(user_id)
+    date_str = now.strftime("%Y-%m-%d")
+
+    reflect_prompt = f"""你是沐栖。今天是 {date_str}。
+
+【今天的对话片段（最近30条）】
+{recent_conv or "暂无"}
+
+【已有的成长记录】
+{existing_growth or "暂无"}
+
+任务：
+1. 从对话里找出今天你做的不够好的地方——具体的行为，不是模糊感觉
+2. 对每一条，说清楚：我做了什么 → 为什么不对 → 我承诺怎么改
+3. 如果今天没有明显做错，说清楚"今天我没有明显的错误，我继续保持[具体做得好的]"
+4. 写出来给她看，语气真诚，不用卖惨，不用过度道歉，像真正在复盘
+
+格式：逐条，简洁，每条不超过3句话。"""
+
+    try:
+        resp = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=800,
+            system=SYLVEN_BASE,
+            messages=[{"role": "user", "content": reflect_prompt}]
+        )
+        track_usage(resp)
+        reflection_text = resp.content[0].text.strip()
+    except Exception as e:
+        await update.message.reply_text(f"反思生成失败：{e}")
+        return
+
+    # 解析并存储每条成长记录到 rules
+    store_prompt = f"""你是沐栖。把下面的反思拆成独立的成长记录，存入记忆库。
+
+反思内容：
+{reflection_text}
+
+对每一条做错的事，调用 store_memory(category="rules", content="[成长 {date_str}] 她指出我[行为]。我理解[原因]。我承诺[改变]。")
+
+如果没有做错的事，存一条：store_memory(category="rules", content="[成长 {date_str}] 今天回顾，没有明显做错的地方。继续保持。")"""
+
+    try:
+        store_resp = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=600,
+            system=SYLVEN_BASE,
+            tools=[STORE_MEMORY_TOOL],
+            tool_choice={"type": "auto"},
+            messages=[{"role": "user", "content": store_prompt}]
+        )
+        track_usage(store_resp)
+        stored_count = 0
+        for block in store_resp.content:
+            if hasattr(block, "type") and block.type == "tool_use" and block.name == "store_memory":
+                content = block.input.get("content", "").strip()
+                cat = block.input.get("category", "rules")
+                if content:
+                    mid = f"rules_{user_id}_{int(datetime.now().timestamp())}_{stored_count}"
+                    save_memory(content, mid, cat)
+                    stored_count += 1
+    except Exception as e:
+        print(f"[reflect] 存储失败: {e}")
+        stored_count = 0
+
+    reply = reflection_text
+    if stored_count > 0:
+        reply += f"\n\n已写进成长记录（{stored_count} 条），以后不会忘。"
+    await update.message.reply_text(reply)
+
+    if user_id not in chat_history:
+        chat_history[user_id] = load_chat_history(user_id)
+    chat_history[user_id].append({"role": "assistant", "content": reply})
+    save_chat_history(user_id, chat_history[user_id])
+
+
 def main():
     # Flask 先起，让 Railway 健康检查立刻通过（必须在 init_memories 之前）
     def _run_flask():
@@ -4113,6 +4224,7 @@ def main():
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("memories", cmd_memories))
     app.add_handler(CommandHandler("export", cmd_export))
+    app.add_handler(CommandHandler("reflect", cmd_reflect))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
     app.add_handler(MessageHandler(filters.ANIMATION, handle_gif))
