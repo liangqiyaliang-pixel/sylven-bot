@@ -1169,6 +1169,16 @@ def load_pinecone_data(key):
         pass
     return None
 
+def load_round_counter(user_id):
+    val = load_pinecone_data(f"round_counter_{user_id}")
+    try:
+        return int(val) if val else 0
+    except:
+        return 0
+
+def save_round_counter(user_id, count):
+    save_pinecone_data(f"round_counter_{user_id}", str(count))
+
 def save_chat_history(user_id, history):
     try:
         history_text = json.dumps(history, ensure_ascii=False)
@@ -1799,6 +1809,72 @@ def _rule_context_hint(rule_name, user_id):
     return hints.get(rule_name, f"她有 {silence_h} 小时没发消息{app_hint}")
 
 
+async def cleanup_old_memories():
+    """每周清理：低情感权重 + 低命中 + 超过180天的记忆"""
+    import math as _math
+    import random as _r
+    try:
+        now_ts = datetime.now().timestamp()
+        cutoff_days = 180
+        deleted = 0
+        skip_cats = {"pinned", "feelings", "anniversary", "rules", "intimate"}
+        prefixes = ["memory_", "study_", "health_", "mianmian_", "diary_"]
+
+        for prefix in prefixes:
+            ids = []
+            try:
+                for batch in index.list(prefix=prefix):
+                    for x in batch:
+                        ids.append(x.id if hasattr(x, 'id') else str(x))
+            except Exception as e:
+                print(f"[遗忘机制] list prefix={prefix} 失败: {e}")
+                continue
+
+            for i in range(0, len(ids), 100):
+                chunk = ids[i:i+100]
+                try:
+                    fetch_res = index.fetch(ids=chunk)
+                except Exception as e:
+                    print(f"[遗忘机制] fetch 失败: {e}")
+                    continue
+                to_delete = []
+                for vid, vec in fetch_res.vectors.items():
+                    meta = vec.metadata or {}
+                    cat = str(meta.get("category", ""))
+                    if cat in skip_cats:
+                        continue
+                    emo = float(meta.get("emo_weight", 0.5))
+                    if emo >= 0.7:
+                        continue
+                    hits = int(meta.get("access_count", 0))
+                    if hits >= 3:
+                        continue
+                    ts_raw = meta.get("timestamp", None)
+                    if ts_raw is None:
+                        continue
+                    try:
+                        mem_ts = float(ts_raw)
+                        age_days = (now_ts - mem_ts) / 86400
+                    except:
+                        continue
+                    if age_days < cutoff_days:
+                        continue
+                    # 概率遗忘：emo越低、越旧越容易被清掉
+                    if _r.random() < (1 - emo) * 0.25:
+                        to_delete.append(vid)
+
+                if to_delete:
+                    try:
+                        index.delete(ids=to_delete)
+                        deleted += len(to_delete)
+                    except Exception as e:
+                        print(f"[遗忘机制] delete 失败: {e}")
+
+        print(f"[遗忘机制] 本轮清理了 {deleted} 条低价值记忆")
+    except Exception as e:
+        print(f"[遗忘机制] 出错: {e}")
+
+
 async def proactive_check(app):
     await asyncio.sleep(30)
     _rule_last_fired[f"{QIQI_USER_ID}_startup"] = datetime.now().timestamp()  # 防启动立刻发
@@ -1938,6 +2014,14 @@ async def proactive_check(app):
                 if saved_week != week_key:
                     save_pinecone_data(f"weekly_diary_done_{QIQI_USER_ID}", week_key)
                     await write_weekly_diary(app, QIQI_USER_ID)
+                continue
+
+            # 每周日凌晨3点：清理低价值记忆（遗忘机制）
+            if now.weekday() == 6 and now.hour == 3 and now.minute < 10:
+                cleanup_key = f"memory_cleanup_{now.strftime('%Y%W')}"
+                if not load_pinecone_data(cleanup_key):
+                    save_pinecone_data(cleanup_key, "done")
+                    await cleanup_old_memories()
                 continue
 
             # ── 六条规则主动消息引擎 ──────────────────────────────
@@ -2384,7 +2468,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         saved = load_pinecone_data(f"msg_counter_{user_id}")
         message_counter[user_id] = int(saved) if saved else 0
     if user_id not in round_counter:
-        round_counter[user_id] = 0
+        # 重启后从 Pinecone 恢复，保持摘要/记忆生成节奏连续
+        round_counter[user_id] = load_round_counter(user_id)
 
     # ========== 记忆召回：双路 + 时间意图 ==========
     # 1. 检测时间意图——"5月3号""上周""3天前"这种问法
@@ -2580,6 +2665,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_counter[user_id] += 1
     round_counter[user_id] += 1
     save_pinecone_data(f"msg_counter_{user_id}", str(message_counter[user_id]))
+    save_round_counter(user_id, round_counter[user_id])
 
     if message_counter[user_id] % MEMORY_INTERVAL == 0:
         memory_text, category = generate_memory_and_category(chat_history[user_id])
