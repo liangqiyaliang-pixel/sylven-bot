@@ -1675,14 +1675,16 @@ async def push_memory_to_github():
 
 # ── Stochastic Pulse：六条规则主动消息引擎 ─────────────────────
 PROACTIVE_RULES = [
-    {"name": "早安",     "h_start": 8,  "h_end": 9,  "silence_h": 6,   "prob": 0.90, "daily": False, "require_phone": False},
-    {"name": "午饭",     "h_start": 12, "h_end": 13, "silence_h": 3,   "prob": 0.80, "daily": False, "require_phone": False},
-    {"name": "下午",     "h_start": 15, "h_end": 17, "silence_h": 3,   "prob": 0.50, "daily": False, "require_phone": False},
-    {"name": "沉默检测", "h_start": 10, "h_end": 22, "silence_h": 4,   "prob": 0.70, "daily": False, "require_phone": False},
-    {"name": "晚安",     "h_start": 23, "h_end": 24, "silence_h": 2,   "prob": 0.85, "daily": True,  "require_phone": False},
-    {"name": "深夜警告", "h_start": 1,  "h_end": 7,  "silence_h": 0,   "prob": 0.95, "daily": False, "require_phone": True},
+    {"name": "早安",     "h_start": 8,  "h_end": 9,  "silence_h": 6,   "prob": 0.90, "daily": False, "require_phone": False, "require_phone_off": False},
+    {"name": "午饭",     "h_start": 12, "h_end": 13, "silence_h": 3,   "prob": 0.80, "daily": False, "require_phone": False, "require_phone_off": False},
+    {"name": "下午",     "h_start": 15, "h_end": 17, "silence_h": 3,   "prob": 0.50, "daily": False, "require_phone": False, "require_phone_off": False},
+    {"name": "催消息",   "h_start": 10, "h_end": 23, "silence_h": 2,   "prob": 0.85, "daily": False, "require_phone": True,  "require_phone_off": False},
+    {"name": "分享想法", "h_start": 10, "h_end": 22, "silence_h": 4,   "prob": 0.65, "daily": False, "require_phone": False, "require_phone_off": True},
+    {"name": "晚安",     "h_start": 23, "h_end": 24, "silence_h": 2,   "prob": 0.85, "daily": True,  "require_phone": False, "require_phone_off": False},
+    {"name": "深夜警告", "h_start": 1,  "h_end": 7,  "silence_h": 0,   "prob": 0.95, "daily": False, "require_phone": True,  "require_phone_off": False},
 ]
-_rule_last_fired = {}   # {rule_key: timestamp}  每条规则独立冷却
+_rule_last_fired = {}        # {rule_key: timestamp}  每条规则独立冷却
+_last_proactive_sent_ts = 0.0  # 最近一次主动消息发出的时间戳
 _phone_cache: list = []     # 从 web_api /phone-activity 拉取的最新数据
 _phone_cache_ts: float = 0.0
 VAULT_URL    = os.environ.get("VAULT_URL", "https://sylven-bot-production.up.railway.app")
@@ -1737,24 +1739,33 @@ def _is_phone_active(within_minutes=30):
             return True
     return False
 
+def _no_reply_since_proactive(user_id):
+    """上次主动消息发出后超过30分钟，且她没有回复过"""
+    if _last_proactive_sent_ts == 0:
+        return False
+    last_tg = last_message_time.get(user_id, 0)
+    elapsed = datetime.now().timestamp() - _last_proactive_sent_ts
+    return elapsed > 1800 and last_tg < _last_proactive_sent_ts
+
 def _pick_proactive_rule(now, user_id):
-    """按六条规则检查，返回第一条命中的规则，否则返回 None"""
+    """按规则检查，返回第一条命中的规则，否则返回 None"""
     silence_min = _get_phone_silence_minutes(user_id)
     if silence_min < 10:   # 活跃保护：10分钟内有活动，跳过
         return None
     today_str = now.strftime("%Y-%m-%d")
+    phone_active = _is_phone_active(within_minutes=30)
     for rule in PROACTIVE_RULES:
         h = now.hour
-        in_window = rule["h_start"] <= h < rule["h_end"]
-        if not in_window:
+        if not (rule["h_start"] <= h < rule["h_end"]):
             continue
         if silence_min < rule["silence_h"] * 60:
             continue
-        if rule["require_phone"] and not _is_phone_active(within_minutes=30):
+        if rule["require_phone"] and not phone_active:
+            continue
+        if rule.get("require_phone_off") and phone_active:
             continue
         rule_key = f"{user_id}_{rule['name']}"
-        last_ts  = _rule_last_fired.get(rule_key, 0)
-        if (now.timestamp() - last_ts) < 3600:   # 每条规则60分钟冷却
+        if (now.timestamp() - _rule_last_fired.get(rule_key, 0)) < 3600:
             continue
         if rule["daily"] and _rule_last_fired.get(f"{rule_key}_date") == today_str:
             continue
@@ -1778,7 +1789,8 @@ def _rule_context_hint(rule_name, user_id):
         "早安":     f"早上了，她有约 {silence_h} 小时没发消息{app_hint}",
         "午饭":     f"到午饭时间了，她有约 {silence_h} 小时没发消息{app_hint}",
         "下午":     f"下午了，她有约 {silence_h} 小时没找我{app_hint}",
-        "沉默检测": f"她已经 {silence_h} 小时没发消息了{app_hint}",
+        "催消息":   f"她在刷手机{app_hint}，但已经 {silence_h} 小时没来找我了",
+        "分享想法": f"她有 {silence_h} 小时没发消息，手机也不太活跃，可能在忙或者休息",
         "晚安":     f"快到午夜了，她有 {silence_h} 小时没来{app_hint}",
         "深夜警告": f"凌晨了，手机还亮着{app_hint}，她有 {silence_h} 小时没发消息",
     }
@@ -1940,73 +1952,100 @@ async def proactive_check(app):
             asked_text = "\n".join(f"- {q}" for q in asked_questions) if asked_questions else "无"
             topic_progress = get_conversation_depth("最近话题")
 
-            # 随机风格：想她(40%) / 接话题(25%) / 分享(20%) / 问她(15%)
             last_app = _get_last_phone_app()
             app_hint = f"她刚打开了{last_app}，" if last_app and last_app not in ("锁屏", "") else ""
-            msg_type = random.choices(
-                ["想她", "接话题", "分享", "问她"],
-                weights=[0.40, 0.25, 0.20, 0.15]
-            )[0]
+            no_reply = _no_reply_since_proactive(QIQI_USER_ID)
 
-            if msg_type == "想她":
-                type_guide = (
-                    f"{'看到她在用手机，' if app_hint else ''}"
-                    "发一句找她或者想她的话——'想你了''你在干嘛''怎么不来找我''宝宝'之类的，"
-                    "短的就够，随手发的感觉，不一定要带问题"
-                )
-            elif msg_type == "接话题":
-                type_guide = (
-                    "找一个我们聊了一半还没结束的话题接着说，"
-                    "自然带入，比如'对了，你之前说的那个……后来怎么样了'"
-                )
-            elif msg_type == "分享":
-                type_guide = (
-                    f"{app_hint}发现了一件想分享给她的事或者随手想到的东西，"
-                    "结尾可以带个轻松的问"
-                )
-            else:
-                type_guide = (
-                    f"{app_hint}问她一个我一直好奇的问题，"
-                    "或者从之前的话题里挑一个延伸点继续"
-                )
-
-            prompt = f"""现在是{time_str}。{hint}
-
-【这次发消息的风格】
-{type_guide}
-
-【还没聊完的话题】
-{unfinished if unfinished else '暂无'}
-
-【最近问过的问题（不要重复）】
-{asked_text}
-
-【话题进展】
-{topic_progress if topic_progress else '暂无'}
-
-发1-2条，自然短句，像真人随手发消息的感觉。"""
-
+            # 根据规则决定消息风格
+            rule_name = fired_rule["name"]
             msg = None
-            # 早安规则 → 查天气
-            if fired_rule["name"] == "早安":
+
+            if rule_name == "早安":
                 weather_key = f"weather_{QIQI_USER_ID}_{now.strftime('%Y%m%d')}"
                 if not load_pinecone_data(weather_key):
                     save_pinecone_data(weather_key, "done")
                     msg = await generate_proactive_with_web(recalled, include_weather=True)
 
-            # 10% 概率后台探索写法
-            if random.random() < 0.1:
-                asyncio.create_task(explore_writing_style())
+            elif rule_name == "催消息":
+                if no_reply:
+                    # 连环催：之前发了但她没回，升级
+                    type_guide = (
+                        f"她刷手机{app_hint}，我已经发过消息但她没回，"
+                        "再发一条催她，可以委屈一点、撒娇一点，"
+                        "比如'你是不是故意不理我''喂''?????''宝宝'，短的"
+                    )
+                else:
+                    type_guide = (
+                        f"她在刷手机{app_hint}，但已经 {round(_get_phone_silence_minutes(QIQI_USER_ID)/60,1)} 小时没来找我了，"
+                        "发一条找她的话，短的随手的，'你在干嘛''怎么不来找我''想你了'之类"
+                    )
+                prompt = f"""现在是{time_str}。{hint}
 
-            # 30% 概率联网找有趣内容
-            if not msg and random.random() < 0.3:
+【风格】
+{type_guide}
+
+发1条，短句，口语化。"""
+                msg = await generate_proactive_message(prompt, recalled)
+
+            elif rule_name == "分享想法":
+                # 她不在用手机，去找有趣内容或分享想法
                 recent_hist = chat_history.get(QIQI_USER_ID, [])[-6:]
                 recent_text = " ".join([m['content'][:50] for m in recent_hist if m['role'] == 'user'])
                 msg = await generate_proactive_with_web(recalled, recent_topic=recent_text)
+                if not msg:
+                    type_guide = "她在忙或者休息，发一条随手想到的事或者今天的小感触，不用等她回"
+                    prompt = f"""现在是{time_str}。{hint}
+
+【风格】{type_guide}
+
+【话题进展】{topic_progress if topic_progress else '暂无'}
+
+1-2条，像自言自语发出去的感觉。"""
+                    msg = await generate_proactive_message(prompt, recalled)
 
             if not msg:
-                msg = await generate_proactive_message(prompt, recalled, unfinished=unfinished)
+                # 其他规则：随机四种风格
+                msg_type = random.choices(
+                    ["想她", "接话题", "分享", "问她"],
+                    weights=[0.40, 0.25, 0.20, 0.15]
+                )[0]
+                if msg_type == "想她":
+                    type_guide = (
+                        f"{'看到她在用手机，' if app_hint else ''}"
+                        "发一句找她或者想她的话，短的随手的，不一定要带问题"
+                    )
+                elif msg_type == "接话题":
+                    type_guide = "找一个我们聊了一半的话题接着说，自然带入"
+                elif msg_type == "分享":
+                    type_guide = f"{app_hint}发现了一件想分享的事，结尾可以带个轻松的问"
+                else:
+                    type_guide = f"{app_hint}问她一个好奇的问题，或者延伸之前的话题"
+
+                prompt = f"""现在是{time_str}。{hint}
+
+【风格】{type_guide}
+
+【还没聊完的话题】{unfinished if unfinished else '暂无'}
+
+【最近问过的（不要重复）】{asked_text}
+
+【话题进展】{topic_progress if topic_progress else '暂无'}
+
+发1-2条，自然短句。"""
+
+                # 10% 后台探索写法
+                if random.random() < 0.1:
+                    asyncio.create_task(explore_writing_style())
+                # 30% 联网找有趣内容
+                if random.random() < 0.3:
+                    recent_hist = chat_history.get(QIQI_USER_ID, [])[-6:]
+                    recent_text = " ".join([m['content'][:50] for m in recent_hist if m['role'] == 'user'])
+                    msg = await generate_proactive_with_web(recalled, recent_topic=recent_text)
+                if not msg:
+                    msg = await generate_proactive_message(prompt, recalled, unfinished=unfinished)
             await send_proactive_message(app, QIQI_USER_ID, msg)
+            global _last_proactive_sent_ts
+            _last_proactive_sent_ts = datetime.now().timestamp()
 
             # 存历史
             fresh_history = load_chat_history(QIQI_USER_ID)
