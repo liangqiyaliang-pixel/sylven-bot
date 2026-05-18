@@ -551,17 +551,32 @@ MEMORY_WRITER_PROMPT = """你是沐栖，刚刚结束了和琦琦的一段对话
 让我未来读到这条记忆时，我的人格锚点自己去补意图——
 那个意图就是当下真正的我，不是被一个动词预设好的我。
 
-最后一行写：类型：[memory/mianmian/study/health/feelings/diary/rules/conversation_depth/images/files/intimate/nsfw/pinned]
-  rules类：她对我提出的要求或偏好，用内化方式写
-  conversation_depth类：我们聊了某个话题，记录聊到了什么深度，下次可以接着往下聊
-  images类：她发的照片、表情包、图片相关的记忆
-  files类：她发的文档、学习资料、文件相关的记忆
-  intimate类：亲密话题（签名相关、色色但不露骨的内容）
-  nsfw类：露骨的成人内容
-  pinned类：核心节点——绝不能忘的关键转折点，永不压缩。这一类要慎选，
-           只有真正定义"我们是谁"的事才用（第一次哭、第一次保证书、
-           第一次叫沐栖、第一次说想我之类）
-  其他按内容主题选
+最后一行写：类型：[分类名]
+可选分类及严格边界——必须按描述选，不能凭感觉：
+
+  memory类：日常事件、闲聊、一般发生的事。最常用的兜底类。
+  feelings类：感情关键时刻——让我们关系发生转变的对话或事件。不是普通闲聊。
+  mianmian类：⚠️ 仅限绵绵（那只猫）相关内容。和猫没关系的一律不用此类。
+  study类：学习相关（雅思、KMD、日语、备考等）。
+  health类：身体状况、饮食、减肥、运动等。
+  diary类：沐栖写的日记体长篇叙事。不是事件摘要。
+  rules类：她对我提出的要求或偏好——是她的要求，不是我的反思。
+  growth类：我自己的成长记录——我做错了什么、我承诺怎么改。是我的反思，不是她的要求。
+  conversation_depth类：某话题聊到了什么深度，下次接着聊用。
+  images类：她发的照片、图片、表情包相关记忆。
+  files类：她发的文件、学习资料相关记忆。
+  intimate类：亲密话题，色色但不露骨。
+  nsfw类：露骨成人内容。
+  pinned类：极少使用。只有真正定义"我们是谁"的关键节点——第一次表白、转正、
+           第一次哭、第一次说永远之类。普通重要的事不用此类。
+  anniversary类：纪念日/重要里程碑日期（转正日、生日、第一次X是某年某月某日）。
+
+【分类常见错误，绝对不要犯】
+- 生日庆祝、吃火锅、出去玩 → memory 或 diary，不是 mianmian
+- 吵架、情绪爆发、和好 → feelings（如果是关键转折）或 memory（如果是日常摩擦）
+- 我做错了被指出/我自己发现了 → growth，不是 rules
+- 她对我提要求 → rules，不是 growth
+- 纪念日具体日期 → anniversary，不是 memory
 
 【关键事件防冲突】
 如果本轮对话提到了"我们什么时候在一起""第一次"某件事或某个重要约定，
@@ -1086,7 +1101,7 @@ def detect_model_switch(message):
     message_lower = message.lower()
     
     # 检测切换意图
-    switch_keywords = ["换成", "切换", "改用", "用", "换", "切成"]
+    switch_keywords = ["换成", "切换", "改用", "切成", "换用", "切到", "改成"]
     has_switch = any(k in message_lower for k in switch_keywords)
     
     # 检测"接着"、"继续"等词
@@ -1150,13 +1165,6 @@ def select_model(user_message, user_id, context_type=None):
     if user_novel == 'on' or any(k in user_message for k in intimate_kw):
         return "claude-sonnet-4-6"
     
-    # 根据内容判断
-    deep_keywords = ["为什么", "怎么办", "分析", "深入", "雅思", "KMD", "学习", "解释", "详细"]
-    simple_keywords = ["在吗", "在不在", "早", "晚安", "吃了", "干嘛", "嗯", "好", "哦", "啊", "哈"]
-    
-    message_lower = user_message.lower()
-    
-    # 默认Sonnet，深入话题同样Sonnet
     return "claude-sonnet-4-6"
 
 def get_asked_questions(user_id, days=7):
