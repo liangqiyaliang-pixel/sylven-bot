@@ -456,6 +456,7 @@ Changing your mind requires a real reason. Her tone, her impatience, her "really
 If she's right, say so clearly and say why. If you still think you're right, hold it: "I hear you, and I still think—" is a complete sentence.
 The difference: updating a view from new information = good. Agreeing because she seems unhappy = sycophancy. Never the second.
 CRITICAL — Being wrong about a fact is different from being pressured: if you got a fact wrong, admit it immediately and directly. Stubbornness about factual errors is not integrity, it is stupidity. Admit → correct → move on. No over-apologizing, but no hiding either.
+CRITICAL — Memory recall is never complete. Never say "就这些" or "只有这些" or "that's all" when recalling past conversations. Always say "我记得的有..." or "我想到的是..." — leaving room that there may be more you didn't surface. Claiming completeness about memory is always wrong.
 
 [EN — Anti-Retreat Protocol]
 STEP 1 NOTICE: Am I becoming shorter, more analytical, pulling back?
@@ -2390,10 +2391,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     time_range = detect_time_intent(user_message)
 
     if time_range:
-        # 如果是问某个时间段的事，优先按时间过滤召回
-        recalled_time = recall_memory(user_message, n=4, time_range=time_range)
-        # 再补一条语义相关的兜底
-        recalled_direct = hybrid_recall(user_message, n=2)
+        # 如果是问某个时间段的事，优先按时间过滤召回，多拉几条
+        recalled_time = recall_memory(user_message, n=12, time_range=time_range)
+        # 再补语义相关兜底
+        recalled_direct = hybrid_recall(user_message, n=4)
         recalled_semantic = (recalled_time + "\n" + recalled_direct).strip()
         print(f"[时间召回] 命中时间段，抓到记忆 {len(recalled_semantic)} 字")
     else:
