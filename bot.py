@@ -2476,6 +2476,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in round_counter:
         # 重启后从 Pinecone 恢复，保持摘要/记忆生成节奏连续
         round_counter[user_id] = load_round_counter(user_id)
+    if user_id not in USER_MODEL:
+        saved_model = load_pinecone_data(f"model_{user_id}")
+        if saved_model:
+            USER_MODEL[user_id] = saved_model
 
     # ========== 记忆召回：双路 + 时间意图 ==========
     # 1. 检测时间意图——"5月3号""上周""3天前"这种问法
