@@ -786,6 +786,64 @@ STORE_MEMORY_TOOL = {
     }
 }
 
+CODE_TOOLS = [
+    {
+        "name": "read_code",
+        "description": (
+            "读取自己的代码文件，用于了解某个功能的实现，或准备修改前确认原文。\n"
+            "可读：bot.py, web_api.py, web/app/index.html, CLAUDE.md\n"
+            "填 search_term 只返回包含该词的前后30行；不填返回文件头500行。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filepath": {
+                    "type": "string",
+                    "enum": ["bot.py", "web_api.py", "web/app/index.html", "CLAUDE.md"],
+                    "description": "要读取的文件名"
+                },
+                "search_term": {
+                    "type": "string",
+                    "description": "可选：搜索这个关键词，只返回相关片段"
+                }
+            },
+            "required": ["filepath"]
+        }
+    },
+    {
+        "name": "edit_code",
+        "description": (
+            "修改自己的代码文件：精确替换 old_text → new_text，push 到 GitHub，Railway 自动重新部署（约3-5分钟）。\n"
+            "只能修改 bot.py 或 web_api.py。\n"
+            "⚠️ 使用前必须先告诉琦琦要改什么、怎么改，等她说'好'或'改吧'再调用。\n"
+            "old_text 必须和文件里完全一致——可以先用 read_code 确认原文。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filepath": {
+                    "type": "string",
+                    "enum": ["bot.py", "web_api.py"],
+                    "description": "要修改的文件"
+                },
+                "old_text": {
+                    "type": "string",
+                    "description": "要替换的原始文本，必须和文件中完全一致"
+                },
+                "new_text": {
+                    "type": "string",
+                    "description": "替换后的新文本"
+                },
+                "commit_message": {
+                    "type": "string",
+                    "description": "这次修改的说明，中文简短"
+                }
+            },
+            "required": ["filepath", "old_text", "new_text", "commit_message"]
+        }
+    }
+]
+
 def calculate_emotional_weight(text: str, category: str) -> float:
     base = _EMO_BASE.get(category, 0.5)
     hits = sum(1 for kw in _EMO_KEYWORDS if kw in text)
@@ -1742,6 +1800,71 @@ async def push_memory_to_github():
 
     except Exception as e:
         print(f"推送GitHub失败: {e}")
+
+async def github_read_file(filepath: str, search_term: str = None) -> str:
+    """从 GitHub 读取文件内容，供沐栖了解自己的实现"""
+    import aiohttp, base64, json as _json
+    safe = {"bot.py", "web_api.py", "web/app/index.html", "CLAUDE.md"}
+    if filepath not in safe:
+        return f"❌ 不允许读取 {filepath}"
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{filepath}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return f"❌ 读取失败 HTTP {resp.status}"
+                data = await resp.json()
+        content = base64.b64decode(data["content"]).decode("utf-8")
+        lines = content.splitlines()
+        if search_term:
+            hits = [i for i, l in enumerate(lines) if search_term in l]
+            if not hits:
+                return f"❌ 找不到 '{search_term}'"
+            start = max(0, hits[0] - 30)
+            end   = min(len(lines), hits[-1] + 31)
+            snippet = "\n".join(f"{i+1}: {l}" for i, l in enumerate(lines[start:end], start=start))
+            return f"📄 {filepath} 第{start+1}-{end}行（含'{search_term}'）：\n\n{snippet}"
+        else:
+            head = "\n".join(f"{i+1}: {l}" for i, l in enumerate(lines[:500]))
+            note = f"\n\n（文件共{len(lines)}行，只显示前500行）" if len(lines) > 500 else ""
+            return f"📄 {filepath}：\n\n{head}{note}"
+    except Exception as e:
+        return f"❌ 读取出错: {e}"
+
+async def github_update_file(filepath: str, old_text: str, new_text: str, commit_message: str) -> str:
+    """通过 GitHub API 替换文件内容并 push，Railway 自动重新部署"""
+    import aiohttp, base64, json as _json
+    safe = {"bot.py", "web_api.py"}
+    if filepath not in safe:
+        return f"❌ 不允许修改 {filepath}"
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{filepath}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json",
+               "Content-Type": "application/json"}
+    try:
+        async with aiohttp.ClientSession() as s:
+            # 先拿 sha 和当前内容
+            async with s.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return f"❌ 读取失败 HTTP {resp.status}"
+                data = await resp.json()
+            sha = data["sha"]
+            content = base64.b64decode(data["content"]).decode("utf-8")
+            if old_text not in content:
+                return "❌ 找不到要替换的内容，请先用 read_code 确认原文是否完全一致"
+            new_content = content.replace(old_text, new_text, 1)
+            payload = _json.dumps({
+                "message": commit_message,
+                "content": base64.b64encode(new_content.encode()).decode(),
+                "sha": sha
+            })
+            async with s.put(url, headers=headers, data=payload,
+                             timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status in (200, 201):
+                    return "✅ 已 push 到 GitHub，Railway 重新部署中（约3-5分钟后生效）"
+                return f"❌ push 失败 HTTP {resp.status}"
+    except Exception as e:
+        return f"❌ 出错: {e}"
 
 # ── Stochastic Pulse：六条规则主动消息引擎 ─────────────────────
 PROACTIVE_RULES = [
@@ -2706,16 +2829,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tools=[
             {"type": "web_search_20250305", "name": "web_search"},
             STORE_MEMORY_TOOL,
+            *CODE_TOOLS,
         ],
         messages=cleaned_history
     )
     track_usage(response)
 
-    # 提取回复内容，处理 store_memory 工具调用
+    # 提取回复内容，处理各类工具调用
     reply = ""
     search_used = False
     search_query = ""
     store_memory_calls = []
+    code_tool_calls = []   # [(tool_id, tool_name, tool_input)]
     for block in response.content:
         if hasattr(block, "type") and block.type == "thinking":
             continue
@@ -2727,6 +2852,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 search_query = block.input.get("query", "")
             elif block.name == "store_memory":
                 store_memory_calls.append((block.id, block.input))
+            elif block.name in ("read_code", "edit_code"):
+                code_tool_calls.append((block.id, block.name, block.input))
 
     # 执行 LLM 自主存储的记忆
     for tool_id, tool_input in store_memory_calls:
@@ -2737,8 +2864,55 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_memory(content, mid, cat)
             print(f"[LLM自主存储] {cat}: {content[:60]}...")
 
-    # 如果模型只返回了 tool_use 没有文字回复，做第二轮 API call 取文字
-    if not reply.strip() and store_memory_calls:
+    # 执行代码读/改工具，做第二轮 API call 拿最终回复
+    if code_tool_calls:
+        tool_results = []
+        for tid, tname, tinput in code_tool_calls:
+            if tname == "read_code":
+                result = await github_read_file(
+                    tinput.get("filepath", "bot.py"),
+                    tinput.get("search_term")
+                )
+            else:  # edit_code
+                result = await github_update_file(
+                    tinput.get("filepath", "bot.py"),
+                    tinput.get("old_text", ""),
+                    tinput.get("new_text", ""),
+                    tinput.get("commit_message", "沐栖自我升级")
+                )
+                print(f"[代码自改] {tinput.get('filepath')} → {result[:60]}")
+            tool_results.append({"type": "tool_result", "tool_use_id": tid, "content": result})
+
+        # 把 store_memory 结果也一并带上（如果有）
+        for tid, _ in store_memory_calls:
+            tool_results.append({"type": "tool_result", "tool_use_id": tid, "content": "已存储"})
+
+        second_messages = cleaned_history + [
+            {"role": "assistant", "content": response.content},
+            {"role": "user", "content": tool_results}
+        ]
+        response2 = client.messages.create(
+            model=model,
+            max_tokens=8192,
+            system=[
+                {"type": "text", "text": stable, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": dynamic}
+            ],
+            tools=[
+                {"type": "web_search_20250305", "name": "web_search"},
+                STORE_MEMORY_TOOL,
+                *CODE_TOOLS,
+            ],
+            messages=second_messages
+        )
+        track_usage(response2)
+        reply = ""
+        for block in response2.content:
+            if hasattr(block, "text") and (not hasattr(block, "type") or block.type == "text"):
+                reply += block.text
+
+    # 如果模型只返回了 store_memory tool_use 没有文字回复，做第二轮 API call 取文字
+    if not reply.strip() and store_memory_calls and not code_tool_calls:
         tool_results = [
             {"type": "tool_result", "tool_use_id": tid, "content": "已存储"}
             for tid, _ in store_memory_calls
@@ -2757,6 +2931,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tools=[
                 {"type": "web_search_20250305", "name": "web_search"},
                 STORE_MEMORY_TOOL,
+                *CODE_TOOLS,
             ],
             messages=second_messages
         )
