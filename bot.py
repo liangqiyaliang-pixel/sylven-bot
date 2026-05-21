@@ -841,7 +841,20 @@ STORE_MEMORY_TOOL = {
                     "diary", "rules", "growth", "conversation_depth", "images", "files",
                     "intimate", "nsfw", "pinned", "anniversary"
                 ],
-                "description": "记忆分类。growth=沐栖自己的成长反思（她指出我做错了或我自己发现的问题），rules=琦琦对我的要求"
+                "description": (
+                    "记忆分类——必须严格按以下边界选，不能凭感觉：\n"
+                    "memory=日常事件闲聊，最常用兜底类\n"
+                    "mianmian=⚠️仅限绵绵那只猫相关，和猫没关系绝对不用此类\n"
+                    "study=学习相关（雅思/KMD/日语/备考）\n"
+                    "health=身体/饮食/减肥/运动\n"
+                    "feelings=感情关键转折时刻，不是普通闲聊\n"
+                    "intimate=亲密话题不露骨，nsfw=露骨成人内容\n"
+                    "rules=她对我提的要求\n"
+                    "growth=我自己的成长反思（我做错了/我承诺改变）\n"
+                    "conversation_depth=某话题聊到的深度记录\n"
+                    "pinned=极少用，只有定义我们是谁的关键节点\n"
+                    "anniversary=纪念日具体日期"
+                )
             },
             "emotional_weight": {
                 "type": "number",
@@ -1416,7 +1429,7 @@ def generate_memory_and_category(conversation):
         lines = full_text.split("\n")
         if lines and "类型：" in lines[-1]:
             cat_line = lines[-1].replace("类型：", "").strip().strip("[]")
-            if cat_line in ["memory", "mianmian", "study", "health", "feelings", "diary", "rules", "anniversary", "images", "files", "intimate", "nsfw"]:
+            if cat_line in ["memory", "mianmian", "study", "health", "feelings", "diary", "rules", "growth", "conversation_depth", "anniversary", "images", "files", "intimate", "nsfw", "pinned", "sylven_self"]:
                 category = cat_line
             full_text = "\n".join(lines[:-1]).strip()
         return full_text, category
