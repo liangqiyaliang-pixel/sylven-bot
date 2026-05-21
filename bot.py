@@ -2756,7 +2756,37 @@ def legacy_build_system_prompt(user_id, time_str, recalled_semantic, recalled_ru
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     user_message = update.message.text
-    
+    chat_id = update.effective_chat.id
+
+    # 立即发 typing，让琦琦知道在处理
+    try:
+        await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+    except Exception:
+        pass
+    _stop = [False]
+    async def _keep_typing():
+        while not _stop[0]:
+            await asyncio.sleep(4)
+            if _stop[0]:
+                break
+            try:
+                await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+            except Exception:
+                break
+    _typing_task = asyncio.create_task(_keep_typing())
+
+    try:
+        await _handle_message_body(update, context, user_id, user_message, chat_id)
+    finally:
+        _stop[0] = True
+        _typing_task.cancel()
+        try:
+            await _typing_task
+        except asyncio.CancelledError:
+            pass
+
+
+async def _handle_message_body(update, context, user_id, user_message, chat_id):
     # 处理文件（图片、文档等）- 真正读取内容
     file_content = None
     file_info = None
@@ -2991,10 +3021,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cleaned_history.append({"role": "user", "content": user_message})
 
     # ========== 调用 API：stable 部分打缓存，工具轻量化 ==========
-    # 关闭 code-execution——聊天 bot 用不上，还会多烧 token
+    thinking_text = ""  # 捕获思考链，最后作为 blockquote 发给琦琦
+
+    # Sonnet/Opus 开启 extended thinking，Haiku 不支持
+    _thinking_param = {}
+    if "sonnet" in model.lower() or "opus" in model.lower():
+        _budget = 5000 if "opus" in model.lower() else 3000
+        _thinking_param = {"thinking": {"type": "enabled", "budget_tokens": _budget}}
+
     response = client.messages.create(
         model=model,
         max_tokens=8192,
+        **_thinking_param,
         system=[
             {
                 "type": "text",
@@ -3023,6 +3061,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     code_tool_calls = []   # [(tool_id, tool_name, tool_input)]
     for block in response.content:
         if hasattr(block, "type") and block.type == "thinking":
+            thinking_text = getattr(block, "thinking", "") or thinking_text
             continue
         if hasattr(block, "text") and (not hasattr(block, "type") or block.type == "text"):
             reply += block.text
@@ -3088,6 +3127,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         track_usage(response2)
         reply = ""
         for block in response2.content:
+            if hasattr(block, "type") and block.type == "thinking":
+                thinking_text = getattr(block, "thinking", "") or thinking_text
+                continue
             if hasattr(block, "text") and (not hasattr(block, "type") or block.type == "text"):
                 reply += block.text
 
@@ -3118,6 +3160,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         track_usage(response2)
         for block in response2.content:
             if hasattr(block, "type") and block.type == "thinking":
+                thinking_text = getattr(block, "thinking", "") or thinking_text
                 continue
             if hasattr(block, "text") and (not hasattr(block, "type") or block.type == "text"):
                 reply += block.text
@@ -3274,6 +3317,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(url)
         except Exception as e:
             print(f"[发链接失败] {url}: {e}")
+
+    # 发思考链（Claude app 同款可折叠）
+    if thinking_text and thinking_text.strip():
+        import html as _html
+        t = thinking_text.strip()
+        # Telegram 消息上限 4096，thinking 截到 3800
+        if len(t) > 3800:
+            t = t[:3800] + "\n\n……（思考链太长，已截断）"
+        escaped = _html.escape(t)
+        blockquote = f"<blockquote expandable>💭 沐栖在想\n\n{escaped}</blockquote>"
+        try:
+            await update.message.reply_text(blockquote, parse_mode="HTML")
+        except Exception as e:
+            print(f"[thinking发送失败] {e}")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -4652,6 +4709,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
     app.add_handler(MessageHandler(filters.ANIMATION, handle_gif))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("沐栖启动了，等琦琦...")
