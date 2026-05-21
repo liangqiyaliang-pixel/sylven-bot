@@ -31,6 +31,7 @@ TOKEN_STATS = {
     "cache_read": 0,
     "total_calls": 0,
 }
+_last_saved_token_stats = {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0, "total_calls": 0}
 
 def track_usage(response):
     """抓 API 响应里的 usage 数据，写进 dashboard 统计"""
@@ -41,8 +42,30 @@ def track_usage(response):
         TOKEN_STATS["cache_write"] += getattr(u, "cache_creation_input_tokens", 0) or 0
         TOKEN_STATS["cache_read"] += getattr(u, "cache_read_input_tokens", 0) or 0
         TOKEN_STATS["total_calls"] += 1
+        # 每10次调用持久化一次增量到 Pinecone
+        if TOKEN_STATS["total_calls"] % 10 == 0:
+            _flush_token_stats()
     except Exception as e:
         print(f"[usage tracking 失败] {e}")
+
+def _flush_token_stats():
+    """把本次启动以来的增量写进 Pinecone 当天的 token 统计桶"""
+    global _last_saved_token_stats
+    import json as _j
+    try:
+        today = datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d')
+        day_key = f"token_daily_{today}"
+        delta = {k: TOKEN_STATS[k] - _last_saved_token_stats[k] for k in TOKEN_STATS}
+        if delta["total_calls"] <= 0:
+            return
+        raw = load_pinecone_data(day_key)
+        existing = _j.loads(raw) if raw else {"input":0,"output":0,"cache_write":0,"cache_read":0,"total_calls":0}
+        for k in delta:
+            existing[k] = existing.get(k, 0) + delta[k]
+        save_pinecone_data(day_key, _j.dumps(existing))
+        _last_saved_token_stats = TOKEN_STATS.copy()
+    except Exception as e:
+        print(f"[token flush 失败] {e}")
 
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(host=PINECONE_HOST)

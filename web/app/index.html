@@ -670,6 +670,47 @@ ul { list-style: none; }
 .diary-item-text.expanded { max-height:none; }
 .diary-item-toggle { margin-top:6px; font-size:0.74rem; color:var(--sylven); cursor:pointer; border:none; background:none; padding:0; }
 
+/* ─── Tab: 用量 ──────────────────────────────────────────── */
+.usage-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:28px; }
+.usage-card {
+  background:var(--card); border:1px solid var(--border); border-radius:var(--r);
+  padding:20px 22px;
+}
+.usage-card-label { font-size:0.72rem; color:var(--text-muted); margin-bottom:6px; }
+.usage-card-num {
+  font-family:'Fraunces',Georgia,serif; font-size:1.8rem;
+  color:var(--text); line-height:1.1;
+}
+.usage-card-num.highlight { color:var(--sylven); }
+.usage-card-sub { font-size:0.72rem; color:var(--text-muted); margin-top:4px; }
+.usage-section-title {
+  font-family:'ZCOOL XiaoWei',serif; font-size:0.92rem;
+  color:var(--text); margin:24px 0 12px;
+}
+.usage-bar-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.usage-bar-label { font-size:0.76rem; color:var(--text-muted); width:70px; flex-shrink:0; }
+.usage-bar-track {
+  flex:1; height:8px; background:rgba(60,46,38,0.08); border-radius:4px; overflow:hidden;
+}
+.usage-bar-fill {
+  height:100%; border-radius:4px; background:var(--sylven);
+  transition:width 0.6s ease;
+}
+.usage-bar-fill.green { background:var(--study); }
+.usage-bar-fill.muted { background:rgba(60,46,38,0.2); }
+.usage-bar-val { font-size:0.72rem; color:var(--text-muted); width:60px; text-align:right; flex-shrink:0; }
+.usage-daily-list { display:flex; flex-direction:column; gap:6px; }
+.usage-daily-row {
+  display:flex; align-items:center; gap:10px;
+  font-size:0.78rem; color:var(--text-muted);
+}
+.usage-daily-date { width:80px; flex-shrink:0; font-family:'Fraunces',Georgia,serif; }
+.usage-daily-bar { flex:1; height:6px; background:rgba(60,46,38,0.08); border-radius:3px; overflow:hidden; }
+.usage-daily-fill { height:100%; border-radius:3px; background:var(--sylven-soft); }
+.usage-daily-fill.has-data { background:var(--sylven); }
+.usage-daily-cost { width:56px; text-align:right; flex-shrink:0; }
+.usage-note { font-size:0.72rem; color:var(--text-muted); margin-top:20px; line-height:1.6; }
+
 /* ─── Utility ────────────────────────────────────────────── */
 .divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
 
@@ -888,6 +929,7 @@ ul { list-style: none; }
     <button class="tab-btn" data-tab="plan">学习计划</button>
     <button class="tab-btn active" data-tab="brain">沐栖大脑</button>
     <button class="tab-btn" data-tab="diary">感情日记</button>
+    <button class="tab-btn" data-tab="usage">用量</button>
     <button class="tab-btn" data-tab="tutor">沐栖陪练</button>
   </nav>
 
@@ -1622,6 +1664,47 @@ ul { list-style: none; }
     </div>
   </section>
 
+  <!-- ── Tab: 用量 ──────────────────────────── -->
+  <section class="tab-panel" id="tab-usage">
+    <div class="section-header">
+      <span class="section-title">用量</span>
+      <span class="section-sub" id="usage-sub">加载中…</span>
+      <button class="btn-add-mem" onclick="loadUsageTab(true)" style="margin-left:auto">刷新</button>
+    </div>
+
+    <!-- 三格汇总 -->
+    <div class="usage-grid">
+      <div class="usage-card">
+        <div class="usage-card-label">今天</div>
+        <div class="usage-card-num highlight" id="u-today-cost">—</div>
+        <div class="usage-card-sub" id="u-today-tokens">— tokens</div>
+      </div>
+      <div class="usage-card">
+        <div class="usage-card-label">本周（7天）</div>
+        <div class="usage-card-num" id="u-week-cost">—</div>
+        <div class="usage-card-sub" id="u-week-tokens">— tokens</div>
+      </div>
+      <div class="usage-card">
+        <div class="usage-card-label">本月（30天）</div>
+        <div class="usage-card-num" id="u-month-cost">—</div>
+        <div class="usage-card-sub" id="u-month-tokens">— tokens</div>
+      </div>
+    </div>
+
+    <!-- token 构成 -->
+    <div class="usage-section-title">Token 构成（本月）</div>
+    <div id="usage-breakdown"></div>
+
+    <!-- 每日条状图 -->
+    <div class="usage-section-title">最近 30 天每日费用</div>
+    <div class="usage-daily-list" id="usage-daily"></div>
+
+    <p class="usage-note">
+      💡 费用按 Sonnet 4.6 官方价格估算：输入 $3/M · 输出 $15/M · 缓存写 $3.75/M · 缓存读 $0.30/M<br>
+      每 10 次 API 调用自动存档一次，重启不丢失。1 USD ≈ 7.25 CNY（参考）
+    </p>
+  </section>
+
   <!-- ── Tab: 感情日记 ──────────────────────── -->
   <section class="tab-panel" id="tab-diary">
     <div class="section-header">
@@ -1684,6 +1767,102 @@ function showTab(id) {
   document.querySelector('[data-tab="' + id + '"]').classList.add('active');
   if (id === 'brain') loadBrainTab();
   if (id === 'diary') loadDiaryTab();
+  if (id === 'usage') loadUsageTab();
+}
+
+/* ── 用量 Tab ────────────────────────────── */
+let usageLoaded = false;
+
+const PRICE = { input: 3.0, output: 15.0, cache_write: 3.75, cache_read: 0.30 }; // per 1M tokens
+
+function calcCost(d) {
+  if (!d) return 0;
+  return (
+    (d.input       || 0) / 1e6 * PRICE.input +
+    (d.output      || 0) / 1e6 * PRICE.output +
+    (d.cache_write || 0) / 1e6 * PRICE.cache_write +
+    (d.cache_read  || 0) / 1e6 * PRICE.cache_read
+  );
+}
+function sumDays(daily, n) {
+  const keys = Object.keys(daily).sort().slice(-n);
+  const acc = { input:0, output:0, cache_write:0, cache_read:0, total_calls:0 };
+  for (const k of keys) {
+    const d = daily[k] || {};
+    for (const f of Object.keys(acc)) acc[f] += d[f] || 0;
+  }
+  return acc;
+}
+function fmtK(n) { return n >= 1000 ? (n/1000).toFixed(1)+'K' : String(n); }
+function fmtUSD(v) { return '$' + v.toFixed(4); }
+
+async function loadUsageTab(force = false) {
+  if (usageLoaded && !force) return;
+  document.getElementById('usage-sub').textContent = '加载中…';
+  let data;
+  try {
+    data = await api('/token-stats?days=30');
+  } catch(e) {
+    document.getElementById('usage-sub').textContent = '加载失败：' + e.message;
+    return;
+  }
+  const daily = data.daily || {};
+  usageLoaded = true;
+
+  const today = new Date().toISOString().slice(0,10);
+  const todayD   = daily[today] || {};
+  const weekD    = sumDays(daily, 7);
+  const monthD   = sumDays(daily, 30);
+
+  const todayCost  = calcCost(todayD);
+  const weekCost   = calcCost(weekD);
+  const monthCost  = calcCost(monthD);
+
+  document.getElementById('u-today-cost').textContent  = fmtUSD(todayCost) + '  ≈ ¥' + (todayCost*7.25).toFixed(2);
+  document.getElementById('u-today-tokens').textContent = fmtK((todayD.input||0)+(todayD.output||0)) + ' tokens · ' + (todayD.total_calls||0) + ' 次调用';
+  document.getElementById('u-week-cost').textContent   = fmtUSD(weekCost)  + '  ≈ ¥' + (weekCost*7.25).toFixed(2);
+  document.getElementById('u-week-tokens').textContent  = fmtK((weekD.input||0)+(weekD.output||0)) + ' tokens';
+  document.getElementById('u-month-cost').textContent  = fmtUSD(monthCost) + '  ≈ ¥' + (monthCost*7.25).toFixed(2);
+  document.getElementById('u-month-tokens').textContent = fmtK((monthD.input||0)+(monthD.output||0)) + ' tokens';
+
+  document.getElementById('usage-sub').textContent = '已统计 ' + Object.keys(daily).length + ' 天';
+
+  // 构成条
+  const maxVal = Math.max(monthD.input||1, monthD.output||1, monthD.cache_write||1, monthD.cache_read||1);
+  const bars = [
+    { label:'输入', val:monthD.input||0, cls:'' },
+    { label:'输出', val:monthD.output||0, cls:'green' },
+    { label:'缓存写', val:monthD.cache_write||0, cls:'muted' },
+    { label:'缓存读', val:monthD.cache_read||0, cls:'muted' },
+  ];
+  document.getElementById('usage-breakdown').innerHTML = bars.map(b => `
+    <div class="usage-bar-row">
+      <div class="usage-bar-label">${b.label}</div>
+      <div class="usage-bar-track">
+        <div class="usage-bar-fill ${b.cls}" style="width:${Math.round(b.val/maxVal*100)}%"></div>
+      </div>
+      <div class="usage-bar-val">${fmtK(b.val)}</div>
+    </div>`).join('');
+
+  // 每日条
+  const allDates = [];
+  for (let i=29; i>=0; i--) {
+    const d = new Date(); d.setDate(d.getDate()-i);
+    allDates.push(d.toISOString().slice(0,10));
+  }
+  const maxDay = Math.max(...allDates.map(d => calcCost(daily[d]||{})), 0.0001);
+  document.getElementById('usage-daily').innerHTML = allDates.map(d => {
+    const cost = calcCost(daily[d]||{});
+    const hasData = (daily[d]?.total_calls||0) > 0;
+    const pct = Math.round(cost/maxDay*100);
+    return `<div class="usage-daily-row">
+      <div class="usage-daily-date">${d.slice(5)}</div>
+      <div class="usage-daily-bar">
+        <div class="usage-daily-fill ${hasData?'has-data':''}" style="width:${pct}%"></div>
+      </div>
+      <div class="usage-daily-cost">${hasData ? fmtUSD(cost) : '—'}</div>
+    </div>`;
+  }).join('')
 }
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => showTab(btn.dataset.tab));

@@ -284,6 +284,33 @@ def categories():
     return jsonify(ALL_CATEGORIES)
 
 
+@app.route("/token-stats", methods=["GET"])
+@require_auth
+def token_stats():
+    """读取近N天的 token 用量（存在 Pinecone KV 里的 token_daily_YYYY-MM-DD）"""
+    from datetime import date as _date, timedelta as _td
+    import json as _j
+    days = min(int(request.args.get("days", 30)), 90)
+    today = _date.today()
+    date_list = [(today - _td(days=i)).strftime('%Y-%m-%d') for i in range(days)]
+    ids = [f"data_token_daily_{d}" for d in date_list]
+    try:
+        result = index.fetch(ids=ids)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    daily = {}
+    for vid, vec in result.vectors.items():
+        meta = vec.metadata or {}
+        raw = meta.get("value", "{}")
+        key = meta.get("key", "").replace("token_daily_", "")
+        if key:
+            try:
+                daily[key] = _j.loads(raw)
+            except Exception:
+                pass
+    return jsonify({"daily": daily, "days": days})
+
+
 @app.route("/phone-activity", methods=["POST"])
 @require_auth
 def report_phone_activity():
