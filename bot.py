@@ -2811,56 +2811,70 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _handle_message_body(update, context, user_id, user_message, chat_id):
     # 处理文件（图片、文档等）- 真正读取内容
-    file_content = None
+    file_content_full = None   # 完整文件内容，只发给 Claude API，不进 history
+    file_content_type = None   # "text" | "pdf_b64"
     file_info = None
-    
+    # history 里只存简短引用，不存原文（避免每轮重复发大量 token）
+    history_user_message = user_message
+
     if update.message.document:
-        # 文档文件（PDF、Word、Excel等）
         doc = update.message.document
         file_info = f"[文件：{doc.file_name}]"
-        
+
         try:
-            # 下载文件
             file = await context.bot.get_file(doc.file_id)
             file_path = f"/tmp/{doc.file_name}"
             await file.download_to_drive(file_path)
-            
-            # 根据文件类型读取内容
+
             if doc.file_name.endswith('.pdf'):
-                # 读取PDF
-                import PyPDF2
+                # 优先用 Claude 原生 PDF 读取（base64），不需要本地库
+                import base64 as _b64
                 with open(file_path, 'rb') as f:
-                    pdf_reader = PyPDF2.PdfReader(f)
-                    file_content = "\n".join([page.extract_text() for page in pdf_reader.pages])
+                    file_content_full = _b64.b64encode(f.read()).decode('utf-8')
+                file_content_type = "pdf_b64"
             elif doc.file_name.endswith(('.txt', '.md')):
-                # 读取文本文件
                 with open(file_path, 'r', encoding='utf-8') as f:
-                    file_content = f.read()
+                    file_content_full = f.read()
+                file_content_type = "text"
             elif doc.file_name.endswith(('.docx', '.doc')):
-                # 读取Word文档
-                import docx
-                doc_obj = docx.Document(file_path)
-                file_content = "\n".join([para.text for para in doc_obj.paragraphs])
-            
-            # 生成文件记忆（包含内容摘要）
-            if file_content:
+                try:
+                    import docx as _docx
+                    doc_obj = _docx.Document(file_path)
+                    file_content_full = "\n".join(
+                        p.text for p in doc_obj.paragraphs if p.text.strip()
+                    )
+                    file_content_type = "text"
+                except Exception:
+                    file_content_type = None
+
+            # 生成文件记忆（用 Haiku，省钱；只用文本类型做摘要）
+            if file_content_full and file_content_type == "text":
                 now_str = datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M')
-                # 让Claude分析文件内容
-                summary_prompt = f"琦琦发了一个文件：{doc.file_name}\n\n内容：\n{file_content[:2000]}\n\n用第一人称记录这个文件的主要内容和重点，150字左右。"
-                summary_response = client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=500,
-                    system=MEMORY_WRITER_PROMPT,
-                    messages=[{"role": "user", "content": summary_prompt}]
-                )
-                file_memory = f"[{now_str}] {summary_response.content[0].text}"
-                save_memory(file_memory, f"file_{user_id}_{int(datetime.now().timestamp())}", "files")
-            
-            user_message = f"{file_info} {user_message or ''}\n\n文件内容：\n{file_content[:1000] if file_content else '无法读取'}"
-            
+                summary_prompt = (f"琦琦发了一个文件：{doc.file_name}\n\n"
+                                  f"内容前2000字：\n{file_content_full[:2000]}\n\n"
+                                  f"用第一人称记录这个文件的主要内容和重点，150字左右。")
+                try:
+                    sum_resp = client.messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=300,
+                        system=MEMORY_WRITER_PROMPT,
+                        messages=[{"role": "user", "content": summary_prompt}]
+                    )
+                    track_usage(sum_resp)
+                    file_memory = f"[{now_str}] {sum_resp.content[0].text}"
+                    save_memory(file_memory, f"file_{user_id}_{int(datetime.now().timestamp())}", "files")
+                except Exception as e:
+                    print(f"[文件记忆生成失败] {e}")
+
+            # history 只存简短引用
+            history_user_message = f"{file_info} {user_message or ''}".strip()
+            # user_message 保持为用户附带的问题（可能为空）
+            user_message = user_message or "请读取这个文件并告诉我你的想法。"
+
         except Exception as e:
             print(f"读取文件失败: {e}")
-            user_message = f"{file_info} {user_message or ''}"
+            history_user_message = f"{file_info} {user_message or ''}".strip()
+            user_message = history_user_message
         
     elif update.message.photo:
         # 图片 - 让Claude看图
@@ -3041,7 +3055,20 @@ async def _handle_message_body(update, context, user_id, user_message, chat_id):
     history_limit = 15 if "haiku" in model.lower() else MAX_HISTORY
     if len(cleaned_history) > history_limit:
         cleaned_history = cleaned_history[-history_limit:]
-    cleaned_history.append({"role": "user", "content": user_message})
+    if file_content_full:
+        if file_content_type == "pdf_b64":
+            api_content = [
+                {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": file_content_full}, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": user_message},
+            ]
+        else:
+            api_content = [
+                {"type": "text", "text": f"[文件内容：{file_info}]\n\n{file_content_full}", "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": user_message},
+            ]
+        cleaned_history.append({"role": "user", "content": api_content})
+    else:
+        cleaned_history.append({"role": "user", "content": user_message})
 
     # ========== 调用 API：stable 部分打缓存，工具轻量化 ==========
     thinking_text = ""  # 捕获思考链，最后作为 blockquote 发给琦琦
@@ -3225,7 +3252,8 @@ async def _handle_message_body(update, context, user_id, user_message, chat_id):
         print(f"[搜索记忆已保存] {search_query}")
 
     # 更新历史（原始history，保留[主动消息]标签用于本地识别）
-    chat_history[user_id].append({"role": "user", "content": user_message})
+    # 文件消息只存短引用，不把原始内容塞进历史
+    chat_history[user_id].append({"role": "user", "content": history_user_message if file_content_full else user_message})
     chat_history[user_id].append({"role": "assistant", "content": reply})
     if len(chat_history[user_id]) > MAX_HISTORY:
         chat_history[user_id] = chat_history[user_id][-MAX_HISTORY:]
