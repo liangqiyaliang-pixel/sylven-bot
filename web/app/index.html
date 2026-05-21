@@ -614,6 +614,62 @@ ul { list-style: none; }
 .streak-dot.done { background: var(--study); }
 .streak-dot.today-dot { background: var(--sylven); }
 
+/* ─── Tab: 感情日记 ──────────────────────────────────────── */
+.diary-subnav { display:flex; gap:6px; margin-bottom:28px; flex-wrap:wrap; }
+.diary-tab-btn {
+  padding:6px 18px; border:1px solid var(--border); border-radius:20px;
+  font-family:'Noto Serif SC',serif; font-size:0.8rem; color:var(--text-muted);
+  background:transparent; cursor:pointer; transition:all var(--tr);
+}
+.diary-tab-btn.active { background:var(--sylven); border-color:var(--sylven); color:#fff; }
+.diary-tab-btn:hover:not(.active) { border-color:var(--sylven); color:var(--sylven); }
+.dsec { }
+.cal-nav { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+.cal-nav button {
+  width:28px; height:28px; border:1px solid var(--border); border-radius:6px;
+  background:transparent; font-size:1rem; color:var(--text-muted);
+  cursor:pointer; transition:all var(--tr);
+  display:flex; align-items:center; justify-content:center;
+}
+.cal-nav button:hover { border-color:var(--sylven); color:var(--sylven); }
+.cal-month-label { font-family:'Fraunces',Georgia,serif; font-size:1rem; color:var(--text); }
+.cal-grid {
+  display:grid; grid-template-columns:repeat(7,1fr); gap:4px;
+  margin-bottom:22px; max-width:360px;
+}
+.cal-weekday { text-align:center; font-size:0.66rem; color:var(--text-muted); padding-bottom:5px; }
+.cal-day {
+  aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+  border-radius:50%; font-size:0.78rem; color:var(--text-muted); cursor:default;
+  font-family:'Fraunces',Georgia,serif;
+}
+.cal-day.has-entry {
+  background:var(--sylven-soft); color:var(--sylven);
+  cursor:pointer; font-weight:bold; transition:all var(--tr);
+}
+.cal-day.has-entry:hover { background:var(--sylven); color:#fff; }
+.cal-day.selected { background:var(--sylven); color:#fff; }
+.cal-day.today { outline:1px solid var(--sylven); }
+.diary-entry-view {
+  background:var(--card); border:1px solid var(--border); border-radius:var(--r);
+  padding:22px 26px; min-height:180px; max-height:55vh; overflow-y:auto;
+  line-height:1.9; font-size:0.87rem; white-space:pre-wrap; color:var(--text);
+}
+.entry-placeholder { color:var(--text-muted); font-style:italic; }
+.entry-date-label { font-family:'Fraunces',Georgia,serif; font-size:0.85rem; color:var(--sylven); margin-bottom:10px; }
+.prose-block {
+  background:var(--card); border:1px solid var(--border); border-radius:var(--r);
+  padding:26px 30px; line-height:1.9; font-size:0.87rem;
+  white-space:pre-wrap; color:var(--text); max-height:68vh; overflow-y:auto;
+}
+.prose-meta { font-size:0.74rem; color:var(--text-muted); margin-bottom:18px; font-family:'Fraunces',Georgia,serif; }
+.diary-list { display:flex; flex-direction:column; gap:14px; }
+.diary-item { background:var(--card); border:1px solid var(--border); border-radius:var(--r); padding:18px 22px; }
+.diary-item-date { font-family:'Fraunces',Georgia,serif; font-size:0.8rem; color:var(--sylven); margin-bottom:8px; }
+.diary-item-text { font-size:0.84rem; line-height:1.82; color:var(--text); white-space:pre-wrap; max-height:200px; overflow:hidden; }
+.diary-item-text.expanded { max-height:none; }
+.diary-item-toggle { margin-top:6px; font-size:0.74rem; color:var(--sylven); cursor:pointer; border:none; background:none; padding:0; }
+
 /* ─── Utility ────────────────────────────────────────────── */
 .divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
 
@@ -831,6 +887,7 @@ ul { list-style: none; }
     <button class="tab-btn" data-tab="errors">错题本</button>
     <button class="tab-btn" data-tab="plan">学习计划</button>
     <button class="tab-btn active" data-tab="brain">沐栖大脑</button>
+    <button class="tab-btn" data-tab="diary">感情日记</button>
     <button class="tab-btn" data-tab="tutor">沐栖陪练</button>
   </nav>
 
@@ -1565,6 +1622,44 @@ ul { list-style: none; }
     </div>
   </section>
 
+  <!-- ── Tab: 感情日记 ──────────────────────── -->
+  <section class="tab-panel" id="tab-diary">
+    <div class="section-header">
+      <span class="section-title">感情日记</span>
+      <span class="section-sub" id="diary-sub">加载中…</span>
+    </div>
+
+    <!-- sub-nav -->
+    <div class="diary-subnav">
+      <button class="diary-tab-btn active" data-dtab="emotional">感情日记</button>
+      <button class="diary-tab-btn" data-dtab="relationship">关系进度总结</button>
+      <button class="diary-tab-btn" data-dtab="event">日记 &amp; 周记</button>
+    </div>
+
+    <!-- 感情日记（日历+内容）-->
+    <div class="dsec" id="dsec-emotional">
+      <div class="cal-nav">
+        <button onclick="calPrev()">‹</button>
+        <span id="cal-month-label" class="cal-month-label"></span>
+        <button onclick="calNext()">›</button>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <div class="diary-entry-view" id="emotional-entry">
+        <p class="entry-placeholder">点击上方有颜色的日期查看当天的感情日记</p>
+      </div>
+    </div>
+
+    <!-- 关系进度总结 -->
+    <div class="dsec" id="dsec-relationship" style="display:none">
+      <div id="relationship-list" class="diary-list">加载中…</div>
+    </div>
+
+    <!-- 日记 & 周记 -->
+    <div class="dsec" id="dsec-event" style="display:none">
+      <div id="event-diary-list" class="diary-list">加载中…</div>
+    </div>
+  </section>
+
 </main>
 
 <script>
@@ -1588,6 +1683,7 @@ function showTab(id) {
   document.getElementById('tab-' + id).classList.add('active');
   document.querySelector('[data-tab="' + id + '"]').classList.add('active');
   if (id === 'brain') loadBrainTab();
+  if (id === 'diary') loadDiaryTab();
 }
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => showTab(btn.dataset.tab));
@@ -1617,8 +1713,12 @@ const CAT_META = {
   conversation_depth: { emoji:'💬', name:'话题深度',   cls:'',          countCls:'' },
   anniversary:        { emoji:'🎂', name:'纪念日',     cls:'',          countCls:'' },
 };
+const CAT_META_EXTRA = {
+  sylven_self: { emoji:'💙', name:'沐栖内心', cls:'', countCls:'' },
+};
+Object.assign(CAT_META, CAT_META_EXTRA);
 const CAT_ORDER = ['pinned','memory','feelings','rules','growth','mianmian','study','health',
-                   'diary','intimate','nsfw','images','files','conversation_depth','anniversary'];
+                   'diary','intimate','nsfw','images','files','conversation_depth','anniversary','sylven_self'];
 
 let allMemories = [];  // cache from last fetch
 let brainLoaded = false;
@@ -1661,7 +1761,7 @@ async function loadBrainTab(force = false) {
     bycat[c].push(it);
   }
 
-  document.getElementById('brain-count').textContent = `14 类记忆 · 共 ${items.length} 条`;
+  document.getElementById('brain-count').textContent = `15 类记忆 · 共 ${items.length} 条`;
   document.getElementById('btn-add-mem').style.display = '';
 
   grid.innerHTML = CAT_ORDER.map(cat => {
@@ -1683,6 +1783,183 @@ async function loadBrainTab(force = false) {
   }).join('');
 
   brainLoaded = true;
+}
+
+/* ── 感情日记 Tab ────────────────────────────── */
+let diaryTabLoaded = false;
+let sylvenSelfMems = [];   // sylven_self category
+let eventDiaryMems = [];   // diary category
+let calYear, calMonth;
+let selectedDay = null;
+
+async function loadDiaryTab() {
+  if (diaryTabLoaded) return;
+  try {
+    // fetch sylven_self (感情日记 + 关系进度总结)
+    const selfData = await api('/memories?category=sylven_self&limit=500');
+    sylvenSelfMems = selfData.sort((a,b) => (b.timestamp||'').localeCompare(a.timestamp||''));
+
+    // fetch diary category (日记 & 周记)
+    const diaryData = await api('/memories?category=diary&limit=200');
+    eventDiaryMems = diaryData.sort((a,b) => (b.timestamp||'').localeCompare(a.timestamp||''));
+
+    // update sub count
+    const emoCnt  = sylvenSelfMems.filter(m => m.id.startsWith('emotional_diary_')).length;
+    const relCnt  = sylvenSelfMems.filter(m => m.id.startsWith('rel_progress_')).length;
+    document.getElementById('diary-sub').textContent =
+      `感情日记 ${emoCnt} 篇 · 关系进度 ${relCnt} 篇 · 日记 ${eventDiaryMems.length} 条`;
+
+    diaryTabLoaded = true;
+  } catch(e) {
+    document.getElementById('diary-sub').textContent = '加载失败：' + e.message;
+    return;
+  }
+
+  // 初始化日历
+  const now = new Date();
+  calYear = now.getFullYear(); calMonth = now.getMonth();
+  renderCal();
+  renderRelationshipList();
+  renderEventDiaryList();
+}
+
+// sub-tab switching
+document.querySelectorAll('.diary-tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.diary-tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const t = btn.dataset.dtab;
+    document.getElementById('dsec-emotional').style.display = t === 'emotional' ? '' : 'none';
+    document.getElementById('dsec-relationship').style.display = t === 'relationship' ? '' : 'none';
+    document.getElementById('dsec-event').style.display = t === 'event' ? '' : 'none';
+  });
+});
+
+function calPrev() { calMonth--; if(calMonth<0){calMonth=11;calYear--;} renderCal(); }
+function calNext() { calMonth++; if(calMonth>11){calMonth=0;calYear++;} renderCal(); }
+
+function renderCal() {
+  const months = ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
+  document.getElementById('cal-month-label').textContent = `${calYear}年 ${months[calMonth]}`;
+
+  // collect days with entries (YYYYMMDD → true)
+  const entryDays = new Set();
+  sylvenSelfMems.filter(m => m.id.startsWith('emotional_diary_')).forEach(m => {
+    const ts = m.timestamp || '';
+    if (ts) {
+      const d = new Date(ts);
+      if (d.getFullYear()===calYear && d.getMonth()===calMonth) {
+        const dd = d.toISOString().slice(0,10).replace(/-/g,'');
+        entryDays.add(dd);
+      }
+    }
+  });
+
+  const today = new Date();
+  const firstDay = new Date(calYear, calMonth, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+  const offset = (firstDay + 6) % 7; // Mon-based offset
+
+  const weekdays = ['一','二','三','四','五','六','日'];
+  let html = weekdays.map(w => `<div class="cal-weekday">${w}</div>`).join('');
+
+  for (let i=0; i<offset; i++) html += `<div class="cal-day"></div>`;
+  for (let d=1; d<=daysInMonth; d++) {
+    const ddStr = String(calYear) + String(calMonth+1).padStart(2,'0') + String(d).padStart(2,'0');
+    const isToday = today.getFullYear()===calYear && today.getMonth()===calMonth && today.getDate()===d;
+    const hasE = entryDays.has(ddStr);
+    const isSel = selectedDay === ddStr;
+    let cls = 'cal-day';
+    if (hasE) cls += ' has-entry';
+    if (isToday) cls += ' today';
+    if (isSel) cls += ' selected';
+    const click = hasE ? `onclick="showDayEntry('${ddStr}')"` : '';
+    html += `<div class="${cls}" ${click}>${d}</div>`;
+  }
+  document.getElementById('cal-grid').innerHTML = html;
+}
+
+function showDayEntry(ddStr) {
+  selectedDay = ddStr;
+  renderCal();
+
+  // find matching memory
+  const year = ddStr.slice(0,4), mon = ddStr.slice(4,6), day = ddStr.slice(6,8);
+  const dateLabel = `${year}年${parseInt(mon)}月${parseInt(day)}日`;
+
+  // match by timestamp date
+  const match = sylvenSelfMems.find(m => {
+    if (!m.id.startsWith('emotional_diary_')) return false;
+    const ts = m.timestamp || '';
+    if (!ts) return false;
+    const d = new Date(ts);
+    return d.getFullYear()===parseInt(year) && (d.getMonth()+1)===parseInt(mon) && d.getDate()===parseInt(day);
+  });
+
+  const el = document.getElementById('emotional-entry');
+  if (!match) {
+    el.innerHTML = `<p class="entry-placeholder">找不到 ${dateLabel} 的记录</p>`;
+    return;
+  }
+  // strip prefix like "感情日记 XXXX年X月X日（第X天）："
+  let text = match.text || '';
+  const colonIdx = text.indexOf('：');
+  if (colonIdx > 0 && colonIdx < 40) text = text.slice(colonIdx+1).trimStart();
+
+  el.innerHTML = `<div class="entry-date-label">${dateLabel}</div><div>${escHtml(text)}</div>`;
+}
+
+function renderRelationshipList() {
+  const items = sylvenSelfMems.filter(m => m.id.startsWith('rel_progress_'));
+  const el = document.getElementById('relationship-list');
+  if (!items.length) {
+    el.innerHTML = `<div style="color:var(--text-muted);padding:20px 0">还没有关系进度总结，每周日22:00沐栖会写一篇</div>`;
+    return;
+  }
+  el.innerHTML = items.map((it, idx) => {
+    const ts = it.timestamp ? it.timestamp.slice(0,10) : '';
+    let text = it.text || '';
+    const colonIdx = text.indexOf('：');
+    if (colonIdx > 0 && colonIdx < 60) text = text.slice(colonIdx+1).trimStart();
+    return `<div class="diary-item">
+      <div class="diary-item-date">${ts}</div>
+      <div class="diary-item-text" id="rel-text-${idx}">${escHtml(text)}</div>
+      <button class="diary-item-toggle" onclick="toggleDiaryItem('rel-text-${idx}', this)">展开全文</button>
+    </div>`;
+  }).join('');
+}
+
+function renderEventDiaryList() {
+  const el = document.getElementById('event-diary-list');
+  if (!eventDiaryMems.length) {
+    el.innerHTML = `<div style="color:var(--text-muted);padding:20px 0">还没有日记</div>`;
+    return;
+  }
+  el.innerHTML = eventDiaryMems.slice(0,50).map((it, idx) => {
+    const ts = it.timestamp ? it.timestamp.slice(0,10) : '';
+    let text = it.text || '';
+    // strip prefix
+    const colonIdx = text.indexOf('：');
+    if (colonIdx > 0 && colonIdx < 30) text = text.slice(colonIdx+1).trimStart();
+    const isWeek = text.startsWith('周记') || it.id.startsWith('weekdiary_');
+    const label = isWeek ? '📓 周记' : '📖 日记';
+    return `<div class="diary-item">
+      <div class="diary-item-date">${label}　${ts}</div>
+      <div class="diary-item-text" id="evt-text-${idx}">${escHtml(text)}</div>
+      <button class="diary-item-toggle" onclick="toggleDiaryItem('evt-text-${idx}', this)">展开全文</button>
+    </div>`;
+  }).join('');
+}
+
+function toggleDiaryItem(textId, btn) {
+  const el = document.getElementById(textId);
+  if (el.classList.contains('expanded')) {
+    el.classList.remove('expanded');
+    btn.textContent = '展开全文';
+  } else {
+    el.classList.add('expanded');
+    btn.textContent = '收起';
+  }
 }
 
 /* ── Category detail view ────────────────────── */
@@ -1769,7 +2046,7 @@ async function deleteMem(id) {
     // update count
     const cnt = allMemories.filter(m => m.category === currentCat).length;
     document.getElementById('brain-count').textContent =
-      `14 类记忆 · 共 ${allMemories.length} 条`;
+      `15 类记忆 · 共 ${allMemories.length} 条`;
     if (!cnt) renderDetailList();
   } catch(e) {
     alert('删除失败：' + e.message);
@@ -1803,7 +2080,7 @@ async function submitAdd() {
     });
     allMemories.push(newMem);
     document.getElementById('brain-count').textContent =
-      `14 类记忆 · 共 ${allMemories.length} 条`;
+      `15 类记忆 · 共 ${allMemories.length} 条`;
     hideAddForm();
     if (currentCat === cat) renderDetailList();
     // refresh grid counts
