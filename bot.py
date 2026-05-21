@@ -1944,25 +1944,25 @@ async def push_memory_to_github():
         print(f"推送GitHub失败: {e}")
 
 async def github_read_file(filepath: str, search_term: str = None) -> str:
-    """从 GitHub 读取文件内容，供沐栖了解自己的实现"""
-    import aiohttp, base64, json as _json
+    """从 GitHub 读取文件内容，供沐栖了解自己的实现。
+    用 raw URL 直接下载原文（无 base64，无 token 依赖，速度快）。"""
+    import aiohttp
     safe = {"bot.py", "web_api.py", "web/app/index.html", "CLAUDE.md"}
     if filepath not in safe:
         return f"❌ 不允许读取 {filepath}"
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{filepath}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
+    # raw URL 直接返回文件原文，公开仓库无需 token
+    raw_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{filepath}"
     try:
         async with aiohttp.ClientSession() as s:
-            async with s.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            async with s.get(raw_url, timeout=aiohttp.ClientTimeout(total=25)) as resp:
                 if resp.status != 200:
                     return f"❌ 读取失败 HTTP {resp.status}"
-                data = await resp.json()
-        content = base64.b64decode(data["content"]).decode("utf-8")
+                content = await resp.text(encoding="utf-8")
         lines = content.splitlines()
         if search_term:
             hits = [i for i, l in enumerate(lines) if search_term in l]
             if not hits:
-                return f"❌ 找不到 '{search_term}'"
+                return f"❌ 找不到 '{search_term}'（共{len(lines)}行）"
             start = max(0, hits[0] - 30)
             end   = min(len(lines), hits[-1] + 31)
             numbered = "\n".join(f"{i+1}: {l}" for i, l in enumerate(lines[start:end], start=start))
@@ -1971,9 +1971,10 @@ async def github_read_file(filepath: str, search_term: str = None) -> str:
                     f"{numbered}\n\n"
                     f"---\n⚠️ edit_code 的 old_text 用下面这段（无行号）：\n```\n{raw}\n```")
         else:
-            head_numbered = "\n".join(f"{i+1}: {l}" for i, l in enumerate(lines[:200]))
-            head_raw      = "\n".join(lines[:200])
-            note = f"\n\n（文件共{len(lines)}行，只显示前200行）" if len(lines) > 200 else ""
+            # 无 search_term：只返回前150行，同时提示用 search_term 精准定位
+            head_numbered = "\n".join(f"{i+1}: {l}" for i, l in enumerate(lines[:150]))
+            head_raw      = "\n".join(lines[:150])
+            note = f"\n\n（文件共{len(lines)}行，只显示前150行；建议用 search_term 精准搜索）" if len(lines) > 150 else ""
             return (f"📄 {filepath}：\n\n{head_numbered}{note}\n\n"
                     f"---\n⚠️ edit_code 的 old_text 用下面这段（无行号）：\n```\n{head_raw}\n```")
     except Exception as e:
