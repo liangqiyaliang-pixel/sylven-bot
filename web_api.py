@@ -52,7 +52,7 @@ def _embed(text: str) -> list[float]:
 ALL_CATEGORIES = [
     "memory", "mianmian", "study", "health", "feelings",
     "diary", "rules", "growth", "conversation_depth", "images", "files",
-    "intimate", "nsfw", "pinned", "anniversary",
+    "intimate", "nsfw", "pinned", "anniversary", "sylven_self",
 ]
 
 # ── routes ────────────────────────────────────────────────────────────────────
