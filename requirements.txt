@@ -5,3 +5,4 @@ pytz
 aiohttp
 flask
 flask-cors
+python-docx

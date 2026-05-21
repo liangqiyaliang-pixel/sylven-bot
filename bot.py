@@ -2853,7 +2853,8 @@ async def _handle_message_body(update, context, user_id, user_message, chat_id):
                         p.text for p in doc_obj.paragraphs if p.text.strip()
                     )
                     file_content_type = "text"
-                except Exception:
+                except Exception as docx_err:
+                    print(f"[docx读取失败] {docx_err}")
                     file_content_type = None
             else:
                 # 其他文件类型（.txt .md .py .csv .json 等）全部尝试按 UTF-8 读
