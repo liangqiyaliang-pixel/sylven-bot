@@ -2826,23 +2826,27 @@ async def _handle_message_body(update, context, user_id, user_message, chat_id):
             file_path = f"/tmp/{doc.file_name}"
             await file.download_to_drive(file_path)
 
-            if doc.file_name.endswith('.pdf'):
-                # 优先用 Claude 原生 PDF 读取（base64），不需要本地库
+            fname_lower = doc.file_name.lower()
+            if fname_lower.endswith('.pdf'):
                 import base64 as _b64
                 with open(file_path, 'rb') as f:
                     file_content_full = _b64.b64encode(f.read()).decode('utf-8')
                 file_content_type = "pdf_b64"
-            elif doc.file_name.endswith(('.txt', '.md')):
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    file_content_full = f.read()
-                file_content_type = "text"
-            elif doc.file_name.endswith(('.docx', '.doc')):
+            elif fname_lower.endswith(('.docx', '.doc')):
                 try:
                     import docx as _docx
                     doc_obj = _docx.Document(file_path)
                     file_content_full = "\n".join(
                         p.text for p in doc_obj.paragraphs if p.text.strip()
                     )
+                    file_content_type = "text"
+                except Exception:
+                    file_content_type = None
+            else:
+                # 其他文件类型（.txt .md .py .csv .json 等）全部尝试按 UTF-8 读
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        file_content_full = f.read()
                     file_content_type = "text"
                 except Exception:
                     file_content_type = None
@@ -3058,12 +3062,12 @@ async def _handle_message_body(update, context, user_id, user_message, chat_id):
     if file_content_full:
         if file_content_type == "pdf_b64":
             api_content = [
-                {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": file_content_full}, "cache_control": {"type": "ephemeral"}},
+                {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": file_content_full}},
                 {"type": "text", "text": user_message},
             ]
         else:
             api_content = [
-                {"type": "text", "text": f"[文件内容：{file_info}]\n\n{file_content_full}", "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": f"[文件内容：{file_info}]\n\n{file_content_full}"},
                 {"type": "text", "text": user_message},
             ]
         cleaned_history.append({"role": "user", "content": api_content})
@@ -3079,28 +3083,33 @@ async def _handle_message_body(update, context, user_id, user_message, chat_id):
         _budget = 5000 if "opus" in model.lower() else 3000
         _thinking_param = {"thinking": {"type": "enabled", "budget_tokens": _budget}}
 
-    response = client.messages.create(
-        model=model,
-        max_tokens=8192,
-        **_thinking_param,
-        system=[
-            {
-                "type": "text",
-                "text": stable,
-                "cache_control": {"type": "ephemeral"}  # 👈 缓存稳定部分
-            },
-            {
-                "type": "text",
-                "text": dynamic
-            }
-        ],
-        tools=[
-            {"type": "web_search_20250305", "name": "web_search"},
-            STORE_MEMORY_TOOL,
-            *CODE_TOOLS,
-        ],
-        messages=cleaned_history
-    )
+    try:
+        response = client.messages.create(
+            model=model,
+            max_tokens=8192,
+            **_thinking_param,
+            system=[
+                {
+                    "type": "text",
+                    "text": stable,
+                    "cache_control": {"type": "ephemeral"}
+                },
+                {
+                    "type": "text",
+                    "text": dynamic
+                }
+            ],
+            tools=[
+                {"type": "web_search_20250305", "name": "web_search"},
+                STORE_MEMORY_TOOL,
+                *CODE_TOOLS,
+            ],
+            messages=cleaned_history
+        )
+    except Exception as api_err:
+        print(f"[API错误] model={model} err={api_err}")
+        await update.message.reply_text("哦不，这条没处理好，能再说一遍吗……")
+        return
     track_usage(response)
 
     # 提取回复内容，处理各类工具调用
